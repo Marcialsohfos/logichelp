@@ -25,8 +25,11 @@ except ImportError:
     # Fallback si les modules ne sont pas disponibles
     def generate_frequency_table(df, variable, group_variable, max_categories=15):
         """Fallback function"""
-        cross_tab = pd.crosstab(df[variable], df[group_variable], margins=True)
-        return cross_tab
+        try:
+            cross_tab = pd.crosstab(df[variable], df[group_variable], margins=True)
+            return cross_tab
+        except:
+            return pd.DataFrame({"Info": ["Analyse non disponible"]})
     
     class DataGenerator:
         def generate_complex_dataset(self, **kwargs):
@@ -129,6 +132,22 @@ def load_css():
             margin-top: 3rem;
             border-radius: 8px;
         }
+        .warning-box {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+        .success-box {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -215,6 +234,68 @@ def show_welcome():
             <p>Export professionnel et automatisation</p>
         </div>
         """, unsafe_allow_html=True)
+
+def generate_frequency_table(df, variable, group_variable, max_categories=15):
+    """
+    Version robuste de génération de tableaux de fréquences
+    """
+    try:
+        # Vérifications de base
+        if variable not in df.columns or group_variable not in df.columns:
+            return pd.DataFrame({"Erreur": ["Colonne manquante"]})
+        
+        # Nettoyer les données
+        df_clean = df[[variable, group_variable]].dropna()
+        
+        if df_clean.empty:
+            return pd.DataFrame({"Message": ["Aucune donnée après nettoyage"]})
+        
+        # Vérifier la variabilité
+        if df_clean[variable].nunique() <= 1 or df_clean[group_variable].nunique() <= 1:
+            return pd.DataFrame({"Message": ["Pas assez de variabilité dans les données"]})
+        
+        # Limiter les catégories si nécessaire
+        if df_clean[variable].nunique() > max_categories:
+            top_categories = df_clean[variable].value_counts().head(max_categories - 1).index
+            df_clean[variable] = df_clean[variable].apply(
+                lambda x: x if x in top_categories else 'Autres'
+            )
+        
+        # Créer le tableau croisé
+        cross_tab = pd.crosstab(
+            df_clean[variable], 
+            df_clean[group_variable],
+            margins=True,
+            margins_name="Total"
+        )
+        
+        # Vérifier que le tableau n'est pas vide
+        if cross_tab.empty:
+            return pd.DataFrame({"Message": ["Tableau croisé vide"]})
+        
+        # Calculer les pourcentages de manière sécurisée
+        try:
+            # Utiliser sum() pour plus de sécurité
+            total_values = cross_tab.sum(axis=0)
+            percent_tab = (cross_tab / total_values) * 100
+            
+            # Formater le résultat
+            result_data = {}
+            for col in cross_tab.columns:
+                result_data[col] = [
+                    f"{count} ({percent:.1f}%)" 
+                    for count, percent in zip(cross_tab[col], percent_tab[col])
+                ]
+            
+            return pd.DataFrame(result_data, index=cross_tab.index)
+            
+        except Exception as e:
+            # Fallback: seulement les effectifs
+            return cross_tab
+            
+    except Exception as e:
+        error_msg = f"Erreur avec {variable}: {str(e)}"
+        return pd.DataFrame({"Erreur": [error_msg]})
 
 def telecharger_donnees():
     st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
@@ -324,35 +405,94 @@ def repartition_variables():
         st.warning("Veuillez d'abord sélectionner une variable d'intérêt")
         return
     
-    col1, col2, col3 = st.columns(3)
+    # Vérifications préalables
+    if var_interet not in df.columns:
+        st.error(f"❌ Variable d'intérêt '{var_interet}' non trouvée")
+        return
+    
+    # Options d'affichage
+    col1, col2 = st.columns(2)
     with col1:
-        show_percentages = st.checkbox("Afficher les pourcentages", value=True)
-    with col2:
-        show_totals = st.checkbox("Afficher les totaux", value=True)
-    with col3:
         max_categories = st.number_input("Max catégories par variable", min_value=5, max_value=50, value=15)
+    with col2:
+        min_unique_values = st.number_input("Valeurs uniques minimum", min_value=1, max_value=10, value=2)
     
+    # Filtrer les variables valides
+    valid_variables = []
+    problematic_variables = []
+    
+    for col in df.columns:
+        if col != var_interet:
+            try:
+                unique_vals_var = df[col].nunique()
+                unique_vals_target = df[var_interet].nunique()
+                
+                if (unique_vals_var >= min_unique_values and 
+                    unique_vals_target >= min_unique_values and
+                    not df[col].isna().all() and 
+                    not df[var_interet].isna().all()):
+                    valid_variables.append(col)
+                else:
+                    problematic_variables.append((col, unique_vals_var, unique_vals_target))
+            except:
+                problematic_variables.append((col, "Erreur", "Erreur"))
+    
+    # Afficher les variables problématiques
+    if problematic_variables:
+        with st.expander("⚠️ Variables ignorées (cliquer pour voir)"):
+            for var, unique_var, unique_target in problematic_variables:
+                st.write(f"- **{var}**: {unique_var} valeur(s) unique(s) | Variable cible: {unique_target} valeur(s) unique(s)")
+    
+    if not valid_variables:
+        st.error("❌ Aucune variable valide à analyser. Vérifiez que vos données ont suffisamment de variabilité.")
+        return
+    
+    st.info(f"🔍 Analyse de {len(valid_variables)} variables sur {len(df.columns) - 1} totales")
+    
+    # Génération des tableaux
     progress_bar = st.progress(0)
-    all_tables = []
+    successful_tables = 0
     
-    variables_to_analyze = [col for col in df.columns if col != var_interet]
+    for i, variable in enumerate(valid_variables):
+        try:
+            with st.spinner(f"Analyse de {variable}..."):
+                table = generate_frequency_table(df, variable, var_interet, max_categories)
+                
+                if table is not None and not table.empty:
+                    if 'Erreur' not in table.columns and 'Message' not in table.columns:
+                        successful_tables += 1
+                        
+                        with st.expander(f"📋 {variable} ({df[variable].nunique()} catégories)", expanded=False):
+                            st.dataframe(table, use_container_width=True)
+                            
+                            # Téléchargement
+                            try:
+                                csv = table.to_csv()
+                                st.download_button(
+                                    label=f"📥 Télécharger {variable}",
+                                    data=csv,
+                                    file_name=f"repartition_{variable.replace(' ', '_')}.csv",
+                                    mime="text/csv",
+                                    key=f"dl_{variable}_{i}"
+                                )
+                            except Exception as e:
+                                st.error(f"❌ Export impossible: {str(e)}")
+                    else:
+                        # Afficher les messages d'erreur
+                        with st.expander(f"❌ {variable} - Problème", expanded=False):
+                            st.dataframe(table, use_container_width=True)
+                else:
+                    st.warning(f"⚠️ Tableau vide pour {variable}")
+                    
+        except Exception as e:
+            st.error(f"❌ Erreur critique avec {variable}: {str(e)}")
+        
+        progress_bar.progress((i + 1) / len(valid_variables))
     
-    for i, variable in enumerate(variables_to_analyze):
-        table = generate_frequency_table(df, variable, var_interet, max_categories)
-        all_tables.append((variable, table))
-        progress_bar.progress((i + 1) / len(variables_to_analyze))
-    
-    for variable_name, table_df in all_tables:
-        with st.expander(f"📋 {variable_name}", expanded=False):
-            st.dataframe(table_df)
-            csv = table_df.to_csv()
-            st.download_button(
-                label=f"📥 Télécharger {variable_name}",
-                data=csv,
-                file_name=f"repartition_{variable_name}.csv",
-                mime="text/csv",
-                key=f"download_{variable_name}"
-            )
+    if successful_tables > 0:
+        st.success(f"✅ {successful_tables}/{len(valid_variables)} tableaux générés avec succès")
+    else:
+        st.warning("⚠️ Aucun tableau n'a pu être généré. Vérifiez vos données.")
 
 def tableaux_croises():
     st.markdown('<h2 class="section-header">🔍 Tableaux Croisés</h2>', unsafe_allow_html=True)
@@ -383,41 +523,46 @@ def tableaux_croises():
         
         for var in selected_vars:
             st.markdown(f"### 📊 Croisement: {var_interet} × {var}")
-            cross_table = pd.crosstab(df[var], df[var_interet])
             
-            if display_type == "Pourcentages en ligne":
-                cross_table_display = cross_table.div(cross_table.sum(axis=1), axis=0) * 100
-                cross_table_display = cross_table_display.round(2)
-            elif display_type == "Pourcentages en colonne":
-                cross_table_display = cross_table.div(cross_table.sum(axis=0), axis=1) * 100
-                cross_table_display = cross_table_display.round(2)
-            elif display_type == "Pourcentages totaux":
-                cross_table_display = (cross_table / len(df)) * 100
-                cross_table_display = cross_table_display.round(2)
-            else:
-                cross_table_display = cross_table
-            
-            st.dataframe(cross_table_display.style.format("{:.2f}" if display_type != "Effectifs" else "{:.0f}"))
-            
-            if show_chi2 and len(cross_table) > 1:
-                try:
-                    chi2, p_value, dof, expected = stats.chi2_contingency(cross_table)
-                    st.write(f"**Test du Chi²:** χ² = {chi2:.3f}, p-value = {p_value:.4f}, ddl = {dof}")
-                    if p_value < 0.05:
-                        st.success("✅ Association significative (p < 0.05)")
-                    else:
-                        st.info("ℹ️ Aucune association significative (p ≥ 0.05)")
-                except Exception as e:
-                    st.warning(f"Test du Chi² non calculable: {str(e)}")
-            
-            csv = cross_table_display.to_csv()
-            st.download_button(
-                label=f"📥 Télécharger {var}",
-                data=csv,
-                file_name=f"croisement_{var_interet}_{var}.csv",
-                mime="text/csv",
-                key=f"download_cross_{var}"
-            )
+            try:
+                cross_table = pd.crosstab(df[var], df[var_interet])
+                
+                if display_type == "Pourcentages en ligne":
+                    cross_table_display = cross_table.div(cross_table.sum(axis=1), axis=0) * 100
+                    cross_table_display = cross_table_display.round(2)
+                elif display_type == "Pourcentages en colonne":
+                    cross_table_display = cross_table.div(cross_table.sum(axis=0), axis=1) * 100
+                    cross_table_display = cross_table_display.round(2)
+                elif display_type == "Pourcentages totaux":
+                    cross_table_display = (cross_table / len(df)) * 100
+                    cross_table_display = cross_table_display.round(2)
+                else:
+                    cross_table_display = cross_table
+                
+                st.dataframe(cross_table_display.style.format("{:.2f}" if display_type != "Effectifs" else "{:.0f}"))
+                
+                if show_chi2 and len(cross_table) > 1:
+                    try:
+                        chi2, p_value, dof, expected = stats.chi2_contingency(cross_table)
+                        st.write(f"**Test du Chi²:** χ² = {chi2:.3f}, p-value = {p_value:.4f}, ddl = {dof}")
+                        if p_value < 0.05:
+                            st.success("✅ Association significative (p < 0.05)")
+                        else:
+                            st.info("ℹ️ Aucune association significative (p ≥ 0.05)")
+                    except Exception as e:
+                        st.warning(f"Test du Chi² non calculable: {str(e)}")
+                
+                csv = cross_table_display.to_csv()
+                st.download_button(
+                    label=f"📥 Télécharger {var}",
+                    data=csv,
+                    file_name=f"croisement_{var_interet}_{var}.csv",
+                    mime="text/csv",
+                    key=f"download_cross_{var}"
+                )
+                
+            except Exception as e:
+                st.error(f"❌ Erreur avec la variable {var}: {str(e)}")
 
 def tests_statistiques():
     st.markdown('<h2 class="section-header">📈 Tests Statistiques</h2>', unsafe_allow_html=True)
@@ -434,29 +579,34 @@ def tests_statistiques():
     with col2:
         test_var2 = st.selectbox("Variable 2:", options=[v for v in df.columns if v != test_var1], key="test_var2")
     
-    var1_type = 'catégorielle' if df[test_var1].dtype == 'object' or df[test_var1].nunique() < 10 else 'numérique'
-    var2_type = 'catégorielle' if df[test_var2].dtype == 'object' or df[test_var2].nunique() < 10 else 'numérique'
-    
-    st.write(f"**Type des variables:** {test_var1} ({var1_type}), {test_var2} ({var2_type})")
-    
-    if var1_type == 'catégorielle' and var2_type == 'catégorielle':
-        st.info("🔍 Test recommandé: Chi-carré d'indépendance")
-        test_chi2_carre(df, test_var1, test_var2)
-    elif var1_type == 'catégorielle' and var2_type == 'numérique':
-        st.info("🔍 Test recommandé: ANOVA ou Test-t")
-        test_anova_ttest(df, test_var1, test_var2)
-    elif var1_type == 'numérique' and var2_type == 'numérique':
-        st.info("🔍 Test recommandé: Corrélation")
-        test_correlation(df, test_var1, test_var2)
-    else:
-        st.warning("Combinaison de types non supportée")
+    # Déterminer les types de variables
+    try:
+        var1_type = 'catégorielle' if df[test_var1].dtype == 'object' or df[test_var1].nunique() < 10 else 'numérique'
+        var2_type = 'catégorielle' if df[test_var2].dtype == 'object' or df[test_var2].nunique() < 10 else 'numérique'
+        
+        st.write(f"**Type des variables:** {test_var1} ({var1_type}), {test_var2} ({var2_type})")
+        
+        if var1_type == 'catégorielle' and var2_type == 'catégorielle':
+            st.info("🔍 Test recommandé: Chi-carré d'indépendance")
+            test_chi2_carre(df, test_var1, test_var2)
+        elif var1_type == 'catégorielle' and var2_type == 'numérique':
+            st.info("🔍 Test recommandé: ANOVA ou Test-t")
+            test_anova_ttest(df, test_var1, test_var2)
+        elif var1_type == 'numérique' and var2_type == 'numérique':
+            st.info("🔍 Test recommandé: Corrélation")
+            test_correlation(df, test_var1, test_var2)
+        else:
+            st.warning("Combinaison de types non supportée")
+    except Exception as e:
+        st.error(f"❌ Erreur lors de l'analyse des types: {str(e)}")
 
 def test_chi2_carre(df, var1, var2):
-    contingency_table = pd.crosstab(df[var1], df[var2])
-    if contingency_table.size == 0:
-        st.error("Tableau de contingence vide")
-        return
     try:
+        contingency_table = pd.crosstab(df[var1], df[var2])
+        if contingency_table.size == 0:
+            st.error("Tableau de contingence vide")
+            return
+        
         chi2, p, dof, expected = stats.chi2_contingency(contingency_table)
         col1, col2 = st.columns(2)
         with col1:
@@ -474,55 +624,61 @@ def test_chi2_carre(df, var1, var2):
         st.error(f"Erreur dans le test Chi-carré: {str(e)}")
 
 def test_anova_ttest(df, cat_var, num_var):
-    groups = df.groupby(cat_var)[num_var].apply(list)
-    if len(groups) == 2:
-        t_stat, p_value = stats.ttest_ind(groups.iloc[0], groups.iloc[1])
-        st.metric("Statistique t", f"{t_stat:.4f}")
-        st.metric("P-value", f"{p_value:.4f}")
-        if p_value < 0.05:
-            st.success("Différence significative entre les groupes (p < 0.05)")
+    try:
+        groups = df.groupby(cat_var)[num_var].apply(list)
+        if len(groups) == 2:
+            t_stat, p_value = stats.ttest_ind(groups.iloc[0], groups.iloc[1])
+            st.metric("Statistique t", f"{t_stat:.4f}")
+            st.metric("P-value", f"{p_value:.4f}")
+            if p_value < 0.05:
+                st.success("Différence significative entre les groupes (p < 0.05)")
+            else:
+                st.info("Aucune différence significative entre les groupes (p ≥ 0.05)")
+            st.write("**Statistiques par groupe:**")
+            stats_by_group = df.groupby(cat_var)[num_var].agg(['mean', 'std', 'count'])
+            st.dataframe(stats_by_group)
         else:
-            st.info("Aucune différence significative entre les groupes (p ≥ 0.05)")
-        st.write("**Statistiques par groupe:**")
-        stats_by_group = df.groupby(cat_var)[num_var].agg(['mean', 'std', 'count'])
-        st.dataframe(stats_by_group)
-    else:
-        f_stat, p_value = stats.f_oneway(*groups)
-        st.metric("Statistique F", f"{f_stat:.4f}")
-        st.metric("P-value", f"{p_value:.4f}")
-        if p_value < 0.05:
-            st.success("Différence significative entre les groupes (p < 0.05)")
-        else:
-            st.info("Aucune différence significative entre les groupes (p ≥ 0.05)")
-        st.write("**Statistiques par groupe:**")
-        stats_by_group = df.groupby(cat_var)[num_var].agg(['mean', 'std', 'count'])
-        st.dataframe(stats_by_group)
+            f_stat, p_value = stats.f_oneway(*groups)
+            st.metric("Statistique F", f"{f_stat:.4f}")
+            st.metric("P-value", f"{p_value:.4f}")
+            if p_value < 0.05:
+                st.success("Différence significative entre les groupes (p < 0.05)")
+            else:
+                st.info("Aucune différence significative entre les groupes (p ≥ 0.05)")
+            st.write("**Statistiques par groupe:**")
+            stats_by_group = df.groupby(cat_var)[num_var].agg(['mean', 'std', 'count'])
+            st.dataframe(stats_by_group)
+    except Exception as e:
+        st.error(f"Erreur dans le test ANOVA/Test-t: {str(e)}")
 
 def test_correlation(df, var1, var2):
-    clean_data = df[[var1, var2]].dropna()
-    if len(clean_data) < 2:
-        st.error("Pas assez de données pour calculer la corrélation")
-        return
-    corr_coef, p_value = stats.pearsonr(clean_data[var1], clean_data[var2])
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Coefficient de corrélation", f"{corr_coef:.4f}")
-    with col2:
-        st.metric("P-value", f"{p_value:.4f}")
-    if abs(corr_coef) > 0.7:
-        strength = "forte"
-    elif abs(corr_coef) > 0.3:
-        strength = "modérée"
-    else:
-        strength = "faible"
-    direction = "positive" if corr_coef > 0 else "négative"
-    st.write(f"**Interprétation:** {strength} corrélation {direction}")
-    if p_value < 0.05:
-        st.success("Corrélation statistiquement significative (p < 0.05)")
-    else:
-        st.info("Corrélation non significative (p ≥ 0.05)")
-    fig = px.scatter(clean_data, x=var1, y=var2, title=f"Relation entre {var1} et {var2}")
-    st.plotly_chart(fig, use_container_width=True)
+    try:
+        clean_data = df[[var1, var2]].dropna()
+        if len(clean_data) < 2:
+            st.error("Pas assez de données pour calculer la corrélation")
+            return
+        corr_coef, p_value = stats.pearsonr(clean_data[var1], clean_data[var2])
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Coefficient de corrélation", f"{corr_coef:.4f}")
+        with col2:
+            st.metric("P-value", f"{p_value:.4f}")
+        if abs(corr_coef) > 0.7:
+            strength = "forte"
+        elif abs(corr_coef) > 0.3:
+            strength = "modérée"
+        else:
+            strength = "faible"
+        direction = "positive" if corr_coef > 0 else "négative"
+        st.write(f"**Interprétation:** {strength} corrélation {direction}")
+        if p_value < 0.05:
+            st.success("Corrélation statistiquement significative (p < 0.05)")
+        else:
+            st.info("Corrélation non significative (p ≥ 0.05)")
+        fig = px.scatter(clean_data, x=var1, y=var2, title=f"Relation entre {var1} et {var2}")
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Erreur dans le test de corrélation: {str(e)}")
 
 def visualisations():
     st.markdown('<h2 class="section-header">🎨 Visualisations</h2>', unsafe_allow_html=True)
@@ -532,49 +688,54 @@ def visualisations():
     
     chart_type = st.selectbox("Type de graphique:", ["Diagramme en barres", "Diagramme en bande", "Histogramme", "Boxplot", "Scatter plot"])
     
-    if chart_type in ["Diagramme en barres", "Diagramme en bande"]:
-        x_var = st.selectbox("Variable catégorielle:", df.columns.tolist())
-        color_var = st.selectbox("Variable de couleur:", [None] + [var_interet] + [v for v in df.columns if v != x_var and v != var_interet])
-        if chart_type == "Diagramme en barres":
-            fig = px.histogram(df, x=x_var, color=color_var, barmode='group', title=f"Distribution de {x_var} par {color_var}")
-        else:
-            fig = px.histogram(df, x=x_var, color=color_var, barmode='stack', title=f"Diagramme en bande: {x_var} par {color_var}")
-    
-    elif chart_type == "Histogramme":
-        num_var = st.selectbox("Variable numérique:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
-        color_var = st.selectbox("Variable de couleur:", [None] + [var_interet] + [v for v in df.columns if v != num_var and v != var_interet])
-        fig = px.histogram(df, x=num_var, color=color_var, marginal="box", title=f"Distribution de {num_var}")
-    
-    elif chart_type == "Boxplot":
-        cat_var = st.selectbox("Variable catégorielle:", df.columns.tolist())
-        num_var = st.selectbox("Variable numérique:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
-        fig = px.box(df, x=cat_var, y=num_var, title=f"Distribution de {num_var} par {cat_var}")
-    
-    elif chart_type == "Scatter plot":
-        x_var = st.selectbox("Variable X:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
-        y_var = st.selectbox("Variable Y:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
-        color_var = st.selectbox("Variable de couleur:", [None] + df.columns.tolist())
-        fig = px.scatter(df, x=x_var, y=y_var, color=color_var, title=f"Relation entre {x_var} et {y_var}")
-    
-    if 'fig' in locals():
-        st.plotly_chart(fig, use_container_width=True)
-        col1, col2 = st.columns(2)
-        with col1:
-            try:
-                if st.button("📥 Télécharger le graphique (PNG)"):
-                    fig.write_image("graphique.png")
-                    with open("graphique.png", "rb") as file:
-                        st.download_button("Télécharger PNG", data=file, file_name="graphique.png", mime="image/png")
-            except: pass
-        with col2:
-            if 'x_var' in locals() and 'y_var' in locals():
-                chart_data = df[[x_var, y_var]].copy()
-            elif 'x_var' in locals():
-                chart_data = df[[x_var]].copy()
+    try:
+        if chart_type in ["Diagramme en barres", "Diagramme en bande"]:
+            x_var = st.selectbox("Variable catégorielle:", df.columns.tolist())
+            color_var = st.selectbox("Variable de couleur:", [None] + [var_interet] + [v for v in df.columns if v != x_var and v != var_interet])
+            if chart_type == "Diagramme en barres":
+                fig = px.histogram(df, x=x_var, color=color_var, barmode='group', title=f"Distribution de {x_var} par {color_var}")
             else:
-                chart_data = df[[num_var]].copy()
-            csv = chart_data.to_csv(index=False)
-            st.download_button("📊 Télécharger les données", data=csv, file_name="donnees_graphique.csv", mime="text/csv")
+                fig = px.histogram(df, x=x_var, color=color_var, barmode='stack', title=f"Diagramme en bande: {x_var} par {color_var}")
+        
+        elif chart_type == "Histogramme":
+            num_var = st.selectbox("Variable numérique:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
+            color_var = st.selectbox("Variable de couleur:", [None] + [var_interet] + [v for v in df.columns if v != num_var and v != var_interet])
+            fig = px.histogram(df, x=num_var, color=color_var, marginal="box", title=f"Distribution de {num_var}")
+        
+        elif chart_type == "Boxplot":
+            cat_var = st.selectbox("Variable catégorielle:", df.columns.tolist())
+            num_var = st.selectbox("Variable numérique:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
+            fig = px.box(df, x=cat_var, y=num_var, title=f"Distribution de {num_var} par {cat_var}")
+        
+        elif chart_type == "Scatter plot":
+            x_var = st.selectbox("Variable X:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
+            y_var = st.selectbox("Variable Y:", [col for col in df.columns if df[col].dtype in ['int64', 'float64']])
+            color_var = st.selectbox("Variable de couleur:", [None] + df.columns.tolist())
+            fig = px.scatter(df, x=x_var, y=y_var, color=color_var, title=f"Relation entre {x_var} et {y_var}")
+        
+        if 'fig' in locals():
+            st.plotly_chart(fig, use_container_width=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                try:
+                    if st.button("📥 Télécharger le graphique (PNG)"):
+                        fig.write_image("graphique.png")
+                        with open("graphique.png", "rb") as file:
+                            st.download_button("Télécharger PNG", data=file, file_name="graphique.png", mime="image/png")
+                except: 
+                    st.info("❌ L'export PNG n'est pas disponible sur cette plateforme")
+            with col2:
+                if 'x_var' in locals() and 'y_var' in locals():
+                    chart_data = df[[x_var, y_var]].copy()
+                elif 'x_var' in locals():
+                    chart_data = df[[x_var]].copy()
+                else:
+                    chart_data = df[[num_var]].copy()
+                csv = chart_data.to_csv(index=False)
+                st.download_button("📊 Télécharger les données", data=csv, file_name="donnees_graphique.csv", mime="text/csv")
+                
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la création du graphique: {str(e)}")
 
 def tableaux_3d():
     st.markdown('<h2 class="section-header">📐 Tableaux à Trois Dimensions</h2>', unsafe_allow_html=True)
@@ -595,38 +756,28 @@ def tableaux_3d():
     agg_type = st.selectbox("Type d'agrégation:", ["Effectif", "Moyenne", "Somme", "Pourcentage"])
     
     if st.button("🔄 Générer le tableau 3D"):
-        if agg_type == "Effectif":
-            pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], aggfunc='size', fill_value=0)
-        elif agg_type in ["Moyenne", "Somme"]:
-            num_vars = [col for col in df.columns if df[col].dtype in ['int64', 'float64']]
-            if num_vars:
-                num_var = st.selectbox("Variable à agréger:", num_vars, key="agg_var")
-                agg_func = 'mean' if agg_type == "Moyenne" else 'sum'
-                pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], values=num_var, aggfunc=agg_func, fill_value=0)
+        try:
+            if agg_type == "Effectif":
+                pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], aggfunc='size', fill_value=0)
+            elif agg_type in ["Moyenne", "Somme"]:
+                num_vars = [col for col in df.columns if df[col].dtype in ['int64', 'float64']]
+                if num_vars:
+                    num_var = st.selectbox("Variable à agréger:", num_vars, key="agg_var")
+                    agg_func = 'mean' if agg_type == "Moyenne" else 'sum'
+                    pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], values=num_var, aggfunc=agg_func, fill_value=0)
+                else:
+                    st.warning("Aucune variable numérique disponible")
+                    return
             else:
-                st.warning("Aucune variable numérique disponible")
-                return
-        else:
-            pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], aggfunc='size', fill_value=0)
-            pivot_3d = (pivot_3d / pivot_3d.sum().sum()) * 100
-        
-        st.dataframe(pivot_3d.style.background_gradient(cmap='Blues'))
-        csv = pivot_3d.to_csv()
-        st.download_button("📥 Télécharger le tableau 3D", data=csv, file_name=f"tableau_3d_{var1}_{var2}_{var3}.csv", mime="text/csv")
-
-def generate_frequency_table(df, variable, group_variable, max_categories=15):
-    if df[variable].nunique() > max_categories:
-        value_counts = df[variable].value_counts()
-        top_categories = value_counts.head(max_categories - 1).index
-        df_temp = df.copy()
-        df_temp[variable] = df_temp[variable].apply(lambda x: x if x in top_categories else 'Autres')
-    else:
-        df_temp = df
-    
-    cross_tab = pd.crosstab(df_temp[variable], df_temp[group_variable], margins=True, margins_name="Total")
-    percent_tab = cross_tab.div(cross_tab.iloc[-1]) * 100
-    result_tab = cross_tab.astype(str) + " (" + percent_tab.round(2).astype(str) + "%)"
-    return result_tab
+                pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], aggfunc='size', fill_value=0)
+                pivot_3d = (pivot_3d / pivot_3d.sum().sum()) * 100
+            
+            st.dataframe(pivot_3d.style.background_gradient(cmap='Blues'))
+            csv = pivot_3d.to_csv()
+            st.download_button("📥 Télécharger le tableau 3D", data=csv, file_name=f"tableau_3d_{var1}_{var2}_{var3}.csv", mime="text/csv")
+            
+        except Exception as e:
+            st.error(f"❌ Erreur lors de la création du tableau 3D: {str(e)}")
 
 def main():
     load_css()
@@ -639,6 +790,7 @@ def main():
     st.sidebar.markdown("### 👤 Session Utilisateur")
     st.sidebar.info("**Statut:** Connecté  \n**Type:** Analyste  \n**Version:** Pro 2.0")
     
+    # Initialisation des variables de session
     if 'df' not in st.session_state:
         st.session_state.df = None
     if 'var_interet' not in st.session_state:
@@ -666,7 +818,12 @@ def main():
         elif section == "📐 Tableaux 3D":
             tableaux_3d()
     else:
-        st.warning("⚠️ Veuillez d'abord charger des données dans la section 'Chargement des données'")
+        st.markdown("""
+        <div class="warning-box">
+            <h4>⚠️ Données Requises</h4>
+            <p>Veuillez d'abord charger des données dans la section <strong>'Chargement des données'</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
     
     add_footer()
 
