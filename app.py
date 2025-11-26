@@ -137,10 +137,10 @@ def add_footer():
     <div class="footer">
         <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto;">
             <div>
-                <strong>LabMath Analytics Pro</strong> - Plateforme d'Analyse Scientifique
+                <strong>LogicApp Analytics Pro</strong> - Plateforme d'Analyse Scientifique
             </div>
             <div>
-                🔬 Powered by <strong>Lab_Math SCSM</strong> and <strong>CIE</strong>
+                🔬 Powered by <strong>LogicApp Analytics</strong>
             </div>
             <div>
                 © Copyright 2025 - Tous droits réservés
@@ -153,7 +153,7 @@ def add_logo():
     st.sidebar.markdown("""
     <div style="text-align: center; padding: 1rem 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; margin-bottom: 1rem;">
         <h2 style="color: white; margin-bottom: 0.5rem;">🔬</h2>
-        <h3 style="color: white; margin: 0;">LabMath Analytics</h3>
+        <h3 style="color: white; margin: 0;">LogicApp Analytics</h3>
         <p style="color: #e0e0e0; font-size: 0.8rem; margin: 0;">Pro Edition</p>
     </div>
     """, unsafe_allow_html=True)
@@ -162,7 +162,7 @@ def show_welcome():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown('<h1 class="main-header">🔬 LabMath Analytics Pro</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 class="main-header">🔬 LogicApp Analytics Pro</h1>', unsafe_allow_html=True)
         st.markdown('<p style="text-align: center; color: #6c757d; font-size: 1.2rem;">Plateforme Professionnelle d\'Analyse de Données Scientifiques</p>', unsafe_allow_html=True)
         
         st.markdown("""
@@ -313,8 +313,6 @@ def charger_donnees():
             st.session_state.var_interet = var_interet
             st.session_state.var_independantes = var_independantes
             st.success("✅ Sélection des variables validée!")
-
-# ... [Les autres fonctions repartition_variables, tableaux_croises, tests_statistiques, visualisations, tableaux_3d restent identiques]
 
 def repartition_variables():
     st.markdown('<h2 class="section-header">📊 Répartition de Toutes les Variables</h2>', unsafe_allow_html=True)

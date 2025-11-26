@@ -412,9 +412,9 @@ class DataDownloader:
         
         html_content += f"""
             <div class="footer">
-                <p><strong>🔬 Powered by Lab_Math SCSM and CIE</strong></p>
+                <p><strong>🔬 Powered by LogicApp Analytics Pro</strong></p>
                 <p>© Copyright 2025 - Tous droits réservés</p>
-                <p>Rapport généré automatiquement par LabMath Analytics Pro</p>
+                <p>Rapport généré automatiquement par LogicApp Analytics Pro</p>
             </div>
         </body>
         </html>
