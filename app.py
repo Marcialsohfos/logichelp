@@ -10,15 +10,29 @@ from plotly.subplots import make_subplots
 import os
 import io
 import base64
-from utils.analysis_functions import *
-from utils.data_generator import DataGenerator
-from data_downloader import DataDownloader
 
-# Tentative d'import des templates de téléchargement
+# Gestion des imports optionnels
+try:
+    from pyreadstat import read_sav, write_sav
+    PYREADSTAT_AVAILABLE = True
+except ImportError:
+    PYREADSTAT_AVAILABLE = False
+
+try:
+    from utils.analysis_functions import *
+    from utils.data_generator import DataGenerator
+except ImportError:
+    # Fallback si les modules ne sont pas disponibles
+    PYREADSTAT_AVAILABLE = False
+    
+    class DataGenerator:
+        def generate_complex_dataset(self, **kwargs):
+            st.error("Générateur de données non disponible")
+            return pd.DataFrame()
+
 try:
     from templates.download_pages import show_download_section, show_data_preview, show_data_quality_report
 except ImportError:
-    # Fallback si le fichier n'existe pas encore
     def show_download_section(generated_data):
         st.warning("Module de téléchargement non disponible")
     
@@ -28,6 +42,8 @@ except ImportError:
     
     def show_data_quality_report(generated_data):
         pass
+
+from data_downloader import DataDownloader
 
 # Configuration de la page
 st.set_page_config(
@@ -165,34 +181,6 @@ def load_css():
             -webkit-text-fill-color: transparent;
         }
         
-        /* Amélioration des onglets */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 2px;
-        }
-        
-        .stTabs [data-baseweb="tab"] {
-            height: 50px;
-            white-space: pre-wrap;
-            background-color: #f8f9fa;
-            border-radius: 8px 8px 0px 0px;
-            gap: 1px;
-            padding-top: 10px;
-            padding-bottom: 10px;
-        }
-        
-        .stTabs [aria-selected="true"] {
-            background-color: #667eea;
-            color: white;
-        }
-        
-        /* Amélioration des métriques */
-        [data-testid="metric-container"] {
-            background: white;
-            padding: 1rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        
         /* Responsive */
         @media (max-width: 768px) {
             .main-header {
@@ -228,7 +216,7 @@ def add_footer():
     st.markdown("<div style='height: 80px;'></div>", unsafe_allow_html=True)
 
 def add_logo():
-    """Ajoute un logo personnalisé (vous pouvez remplacer par votre propre image)"""
+    """Ajoute un logo personnalisé"""
     st.sidebar.markdown("""
     <div style="text-align: center; padding: 1rem 0;">
         <h2 style="color: white; margin-bottom: 0.5rem;">🔬</h2>
@@ -302,81 +290,37 @@ def show_welcome():
         </div>
         """, unsafe_allow_html=True)
 
-def main():
-    # Charger le CSS personnalisé
-    load_css()
-    
-    # Ajouter le logo dans la sidebar
-    add_logo()
-    
-    # Sidebar pour la navigation
-    st.sidebar.markdown("## 📋 Navigation")
-    section = st.sidebar.radio(
-        "Sélectionnez une section:",
-        ["🏠 Accueil", "📥 Télécharger données", "📁 Chargement des données", "📊 Répartition des variables", 
-         "🔍 Tableaux croisés", "📈 Tests statistiques", "🎨 Visualisations", "📐 Tableaux 3D"]
-    )
-    
-    # Informations utilisateur dans la sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 👤 Session Utilisateur")
-    st.sidebar.info("""
-    **Statut:** Connecté  
-    **Type:** Analyste  
-    **Version:** Pro 2.0
-    """)
-    
-    # Initialisation des variables de session
-    if 'df' not in st.session_state:
-        st.session_state.df = None
-    if 'var_interet' not in st.session_state:
-        st.session_state.var_interet = None
-    if 'var_independantes' not in st.session_state:
-        st.session_state.var_independantes = []
-    if 'generated_data' not in st.session_state:
-        st.session_state.generated_data = None
-    
-    # Page d'accueil
-    if section == "🏠 Accueil":
-        show_welcome()
-    
-    # Section 1: Téléchargement de données
-    elif section == "📥 Télécharger données":
-        st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
-        telecharger_donnees()
-    
-    # Section 2: Chargement des données
-    elif section == "📁 Chargement des données":
-        st.markdown('<h2 class="section-header">📁 Chargement des Données</h2>', unsafe_allow_html=True)
-        charger_donnees()
-    
-    # Sections suivantes seulement si des données sont chargées
-    elif st.session_state.df is not None:
-        if section == "📊 Répartition des variables":
-            st.markdown('<h2 class="section-header">📊 Répartition de Toutes les Variables</h2>', unsafe_allow_html=True)
-            repartition_variables()
-        elif section == "🔍 Tableaux croisés":
-            st.markdown('<h2 class="section-header">🔍 Tableaux Croisés</h2>', unsafe_allow_html=True)
-            tableaux_croises()
-        elif section == "📈 Tests statistiques":
-            st.markdown('<h2 class="section-header">📈 Tests Statistiques</h2>', unsafe_allow_html=True)
-            tests_statistiques()
-        elif section == "🎨 Visualisations":
-            st.markdown('<h2 class="section-header">🎨 Visualisations</h2>', unsafe_allow_html=True)
-            visualisations()
-        elif section == "📐 Tableaux 3D":
-            st.markdown('<h2 class="section-header">📐 Tableaux à Trois Dimensions</h2>', unsafe_allow_html=True)
-            tableaux_3d()
-    else:
-        st.markdown("""
-        <div class="warning-message">
-            <h4>⚠️ Données Requises</h4>
-            <p>Veuillez d'abord charger des données dans la section <strong>'Chargement des données'</strong></p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Ajouter le footer sur toutes les pages
-    add_footer()
+def read_data_file(uploaded_file, file_extension):
+    """
+    Lit un fichier uploadé selon son format
+    """
+    try:
+        if file_extension in ['xlsx', 'xls']:
+            return pd.read_excel(uploaded_file)
+        elif file_extension == 'csv':
+            return pd.read_csv(uploaded_file)
+        elif file_extension == 'dta':
+            return pd.read_stata(uploaded_file)
+        elif file_extension == 'sav':
+            if PYREADSTAT_AVAILABLE:
+                df, meta = read_sav(uploaded_file)
+                return df
+            else:
+                st.error("❌ Le format SPSS (.sav) n'est pas supporté sur cette plateforme")
+                st.info("💡 Utilisez Excel, CSV ou STATA à la place")
+                return None
+        elif file_extension == 'txt':
+            # Essayer différents séparateurs
+            try:
+                return pd.read_csv(uploaded_file, delimiter='\t')
+            except:
+                return pd.read_csv(uploaded_file, delimiter=' ')
+        else:
+            st.error(f"❌ Format {file_extension} non supporté")
+            return None
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la lecture du fichier: {str(e)}")
+        return None
 
 def telecharger_donnees():
     st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
@@ -394,8 +338,8 @@ def telecharger_donnees():
     col1, col2 = st.columns(2)
     
     with col1:
-        n_observations = st.slider("Nombre d'observations", 100, 10000, 1000)
-        n_variables = st.slider("Nombre de variables", 5, 50, 15)
+        n_observations = st.slider("Nombre d'observations", 100, 5000, 1000)
+        n_variables = st.slider("Nombre de variables", 5, 30, 15)
     
     with col2:
         include_missing = st.checkbox("Inclure des valeurs manquantes", value=True)
@@ -416,17 +360,20 @@ def telecharger_donnees():
     # Génération des données
     if st.button("🔄 Générer les Données", type="primary"):
         with st.spinner("Génération des données en cours..."):
-            generator = DataGenerator()
-            df_generated = generator.generate_complex_dataset(
-                n_observations=n_observations,
-                n_categorical=n_categorical,
-                n_numerical=n_numerical,
-                n_binary=n_binary,
-                missing_percentage=missing_percentage
-            )
-            
-            st.session_state.generated_data = df_generated
-            st.success(f"✅ Données générées avec succès! Shape: {df_generated.shape}")
+            try:
+                generator = DataGenerator()
+                df_generated = generator.generate_complex_dataset(
+                    n_observations=n_observations,
+                    n_categorical=n_categorical,
+                    n_numerical=n_numerical,
+                    n_binary=n_binary,
+                    missing_percentage=missing_percentage
+                )
+                
+                st.session_state.generated_data = df_generated
+                st.success(f"✅ Données générées avec succès! Shape: {df_generated.shape}")
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la génération: {str(e)}")
     
     # Affichage des données générées
     if st.session_state.generated_data is not None:
@@ -447,8 +394,8 @@ def charger_donnees():
         # Upload de fichier
         uploaded_file = st.file_uploader(
             "Choisissez votre fichier de données",
-            type=['xlsx', 'xls', 'csv', 'dta', 'sav', 'txt'],
-            help="Formats supportés: Excel, CSV, STATA, SPSS, TXT"
+            type=['xlsx', 'xls', 'csv', 'dta', 'txt'],
+            help="Formats supportés: Excel, CSV, STATA, TXT"
         )
         
         if uploaded_file is not None:
@@ -456,8 +403,9 @@ def charger_donnees():
                 # Lecture du fichier selon l'extension
                 file_extension = uploaded_file.name.split('.')[-1].lower()
                 df = read_data_file(uploaded_file, file_extension)
-                st.session_state.df = df
-                st.success(f"✅ Données chargées avec succès! Shape: {df.shape}")
+                if df is not None:
+                    st.session_state.df = df
+                    st.success(f"✅ Données chargées avec succès! Shape: {df.shape}")
                 
             except Exception as e:
                 st.error(f"❌ Erreur lors du chargement: {str(e)}")
@@ -539,9 +487,6 @@ def repartition_variables():
     variables_to_analyze = [col for col in df.columns if col != var_interet]
     
     for i, variable in enumerate(variables_to_analyze):
-        if variable == var_interet:
-            continue
-            
         table = generate_frequency_table(df, variable, var_interet, max_categories)
         all_tables.append((variable, table))
         progress_bar.progress((i + 1) / len(variables_to_analyze))
@@ -560,6 +505,38 @@ def repartition_variables():
                 mime="text/csv",
                 key=f"download_{variable_name}"
             )
+
+def generate_frequency_table(df, variable, group_variable, max_categories=15):
+    """
+    Génère un tableau de fréquences avec effectifs et pourcentages
+    """
+    # Gérer les variables avec trop de catégories
+    if df[variable].nunique() > max_categories:
+        # Regrouper les catégories peu fréquentes
+        value_counts = df[variable].value_counts()
+        top_categories = value_counts.head(max_categories - 1).index
+        df_temp = df.copy()
+        df_temp[variable] = df_temp[variable].apply(
+            lambda x: x if x in top_categories else 'Autres'
+        )
+    else:
+        df_temp = df
+    
+    # Créer le tableau croisé
+    cross_tab = pd.crosstab(
+        df_temp[variable], 
+        df_temp[group_variable],
+        margins=True,
+        margins_name="Total"
+    )
+    
+    # Ajouter les pourcentages
+    percent_tab = cross_tab.div(cross_tab.iloc[-1]) * 100
+    
+    # Combiner effectifs et pourcentages
+    result_tab = cross_tab.astype(str) + " (" + percent_tab.round(2).astype(str) + "%)"
+    
+    return result_tab
 
 def tableaux_croises():
     st.markdown('<h2 class="section-header">🔍 Tableaux Croisés</h2>', unsafe_allow_html=True)
@@ -839,14 +816,17 @@ def visualisations():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("📥 Télécharger le graphique (PNG)"):
-                fig.write_image("graphique.png")
-                with open("graphique.png", "rb") as file:
-                    st.download_button(
-                        label="Télécharger PNG",
-                        data=file,
-                        file_name="graphique.png",
-                        mime="image/png"
-                    )
+                try:
+                    fig.write_image("graphique.png")
+                    with open("graphique.png", "rb") as file:
+                        st.download_button(
+                            label="Télécharger PNG",
+                            data=file,
+                            file_name="graphique.png",
+                            mime="image/png"
+                        )
+                except Exception as e:
+                    st.error(f"Erreur lors de l'export PNG: {str(e)}")
         
         with col2:
             # Télécharger les données du graphique
@@ -864,6 +844,60 @@ def visualisations():
                 file_name="donnees_graphique.csv",
                 mime="text/csv"
             )
+
+def create_bar_chart(df, x_var, color_var=None):
+    """Crée un diagramme en barres interactif"""
+    if color_var:
+        fig = px.histogram(df, x=x_var, color=color_var, barmode='group',
+                          title=f"Distribution de {x_var} par {color_var}")
+    else:
+        fig = px.histogram(df, x=x_var, title=f"Distribution de {x_var}")
+    
+    fig.update_layout(
+        xaxis_title=x_var,
+        yaxis_title="Effectif",
+        legend_title=color_var if color_var else ""
+    )
+    
+    return fig
+
+def create_stacked_bar_chart(df, x_var, stack_var=None):
+    """Crée un diagramme en bande (stacked bar chart)"""
+    if stack_var:
+        fig = px.histogram(df, x=x_var, color=stack_var, barmode='stack',
+                          title=f"Diagramme en bande: {x_var} par {stack_var}")
+    else:
+        fig = px.histogram(df, x=x_var, barmode='stack',
+                          title=f"Diagramme en bande: {x_var}")
+    
+    return fig
+
+def create_histogram(df, num_var, color_var=None):
+    """Crée un histogramme"""
+    if color_var:
+        fig = px.histogram(df, x=num_var, color=color_var, marginal="box",
+                          title=f"Distribution de {num_var}")
+    else:
+        fig = px.histogram(df, x=num_var, title=f"Distribution de {num_var}")
+    
+    return fig
+
+def create_boxplot(df, cat_var, num_var):
+    """Crée un boxplot"""
+    fig = px.box(df, x=cat_var, y=num_var, 
+                title=f"Distribution de {num_var} par {cat_var}")
+    return fig
+
+def create_scatter_plot(df, x_var, y_var, color_var=None):
+    """Crée un scatter plot"""
+    if color_var:
+        fig = px.scatter(df, x=x_var, y=y_var, color=color_var,
+                        title=f"Relation entre {x_var} et {y_var}")
+    else:
+        fig = px.scatter(df, x=x_var, y=y_var,
+                        title=f"Relation entre {x_var} et {y_var}")
+    
+    return fig
 
 def tableaux_3d():
     st.markdown('<h2 class="section-header">📐 Tableaux à Trois Dimensions</h2>', unsafe_allow_html=True)
@@ -939,114 +973,81 @@ def tableaux_3d():
             mime="text/csv"
         )
 
-def create_bar_chart(df, x_var, color_var=None):
-    """Crée un diagramme en barres interactif"""
-    if color_var:
-        fig = px.histogram(df, x=x_var, color=color_var, barmode='group',
-                          title=f"Distribution de {x_var} par {color_var}")
-    else:
-        fig = px.histogram(df, x=x_var, title=f"Distribution de {x_var}")
+def main():
+    # Charger le CSS personnalisé
+    load_css()
     
-    fig.update_layout(
-        xaxis_title=x_var,
-        yaxis_title="Effectif",
-        legend_title=color_var if color_var else ""
+    # Ajouter le logo dans la sidebar
+    add_logo()
+    
+    # Sidebar pour la navigation
+    st.sidebar.markdown("## 📋 Navigation")
+    section = st.sidebar.radio(
+        "Sélectionnez une section:",
+        ["🏠 Accueil", "📥 Télécharger données", "📁 Chargement des données", "📊 Répartition des variables", 
+         "🔍 Tableaux croisés", "📈 Tests statistiques", "🎨 Visualisations", "📐 Tableaux 3D"]
     )
     
-    return fig
-
-def create_stacked_bar_chart(df, x_var, stack_var=None):
-    """Crée un diagramme en bande (stacked bar chart)"""
-    if stack_var:
-        fig = px.histogram(df, x=x_var, color=stack_var, barmode='stack',
-                          title=f"Diagramme en bande: {x_var} par {stack_var}")
+    # Informations utilisateur dans la sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 👤 Session Utilisateur")
+    st.sidebar.info("""
+    **Statut:** Connecté  
+    **Type:** Analyste  
+    **Version:** Pro 2.0
+    """)
+    
+    # Initialisation des variables de session
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+    if 'var_interet' not in st.session_state:
+        st.session_state.var_interet = None
+    if 'var_independantes' not in st.session_state:
+        st.session_state.var_independantes = []
+    if 'generated_data' not in st.session_state:
+        st.session_state.generated_data = None
+    
+    # Page d'accueil
+    if section == "🏠 Accueil":
+        show_welcome()
+    
+    # Section 1: Téléchargement de données
+    elif section == "📥 Télécharger données":
+        st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
+        telecharger_donnees()
+    
+    # Section 2: Chargement des données
+    elif section == "📁 Chargement des données":
+        st.markdown('<h2 class="section-header">📁 Chargement des Données</h2>', unsafe_allow_html=True)
+        charger_donnees()
+    
+    # Sections suivantes seulement si des données sont chargées
+    elif st.session_state.df is not None:
+        if section == "📊 Répartition des variables":
+            st.markdown('<h2 class="section-header">📊 Répartition de Toutes les Variables</h2>', unsafe_allow_html=True)
+            repartition_variables()
+        elif section == "🔍 Tableaux croisés":
+            st.markdown('<h2 class="section-header">🔍 Tableaux Croisés</h2>', unsafe_allow_html=True)
+            tableaux_croises()
+        elif section == "📈 Tests statistiques":
+            st.markdown('<h2 class="section-header">📈 Tests Statistiques</h2>', unsafe_allow_html=True)
+            tests_statistiques()
+        elif section == "🎨 Visualisations":
+            st.markdown('<h2 class="section-header">🎨 Visualisations</h2>', unsafe_allow_html=True)
+            visualisations()
+        elif section == "📐 Tableaux 3D":
+            st.markdown('<h2 class="section-header">📐 Tableaux à Trois Dimensions</h2>', unsafe_allow_html=True)
+            tableaux_3d()
     else:
-        fig = px.histogram(df, x=x_var, barmode='stack',
-                          title=f"Diagramme en bande: {x_var}")
+        st.markdown("""
+        <div class="warning-message">
+            <h4>⚠️ Données Requises</h4>
+            <p>Veuillez d'abord charger des données dans la section <strong>'Chargement des données'</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    return fig
-
-def create_histogram(df, num_var, color_var=None):
-    """Crée un histogramme"""
-    if color_var:
-        fig = px.histogram(df, x=num_var, color=color_var, marginal="box",
-                          title=f"Distribution de {num_var}")
-    else:
-        fig = px.histogram(df, x=num_var, title=f"Distribution de {num_var}")
-    
-    return fig
-
-def create_boxplot(df, cat_var, num_var):
-    """Crée un boxplot"""
-    fig = px.box(df, x=cat_var, y=num_var, 
-                title=f"Distribution de {num_var} par {cat_var}")
-    return fig
-
-def create_scatter_plot(df, x_var, y_var, color_var=None):
-    """Crée un scatter plot"""
-    if color_var:
-        fig = px.scatter(df, x=x_var, y=y_var, color=color_var,
-                        title=f"Relation entre {x_var} et {y_var}")
-    else:
-        fig = px.scatter(df, x=x_var, y=y_var,
-                        title=f"Relation entre {x_var} et {y_var}")
-    
-    return fig
-
-def read_data_file(uploaded_file, file_extension):
-    """
-    Lit un fichier uploadé selon son format
-    """
-    if file_extension in ['xlsx', 'xls']:
-        return pd.read_excel(uploaded_file)
-    elif file_extension == 'csv':
-        return pd.read_csv(uploaded_file)
-    elif file_extension == 'dta':
-        return pd.read_stata(uploaded_file)
-    elif file_extension == 'sav':
-        from pyreadstat import read_sav
-        df, meta = read_sav(uploaded_file)
-        return df
-    elif file_extension == 'txt':
-        # Essayer différents séparateurs
-        try:
-            return pd.read_csv(uploaded_file, delimiter='\t')
-        except:
-            return pd.read_csv(uploaded_file, delimiter=' ')
-    else:
-        raise ValueError(f"Format {file_extension} non supporté")
-
-def generate_frequency_table(df, variable, group_variable, max_categories=15):
-    """
-    Génère un tableau de fréquences avec effectifs et pourcentages
-    """
-    # Gérer les variables avec trop de catégories
-    if df[variable].nunique() > max_categories:
-        # Regrouper les catégories peu fréquentes
-        value_counts = df[variable].value_counts()
-        top_categories = value_counts.head(max_categories - 1).index
-        df_temp = df.copy()
-        df_temp[variable] = df_temp[variable].apply(
-            lambda x: x if x in top_categories else 'Autres'
-        )
-    else:
-        df_temp = df
-    
-    # Créer le tableau croisé
-    cross_tab = pd.crosstab(
-        df_temp[variable], 
-        df_temp[group_variable],
-        margins=True,
-        margins_name="Total"
-    )
-    
-    # Ajouter les pourcentages
-    percent_tab = cross_tab.div(cross_tab.iloc[-1]) * 100
-    
-    # Combiner effectifs et pourcentages
-    result_tab = cross_tab.astype(str) + " (" + percent_tab.round(2).astype(str) + "%)"
-    
-    return result_tab
+    # Ajouter le footer sur toutes les pages
+    add_footer()
 
 if __name__ == "__main__":
     main()
