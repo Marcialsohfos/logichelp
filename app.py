@@ -47,7 +47,7 @@ from data_downloader import DataDownloader
 
 # Configuration de la page
 st.set_page_config(
-    page_title="LabMath Analytics Pro",
+    page_title="LogicApp Analytics Pro",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded"
