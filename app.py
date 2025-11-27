@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 import os
 import io
 import base64
+import re
 
 # Gestion des imports optionnels
 try:
@@ -56,7 +57,7 @@ except ImportError:
     
     def show_data_preview(generated_data):
         if generated_data is not None:
-            st.dataframe(generated_data.head())
+            st.dataframe(generated_data.head(), width='stretch')
             st.write(f"**Dimensions:** {generated_data.shape[0]} lignes × {generated_data.shape[1]} colonnes")
     
     def show_data_quality_report(generated_data):
@@ -73,6 +74,21 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Fonctions de nettoyage pour Excel
+def clean_sheet_name(name):
+    """
+    Nettoie le nom de la feuille pour être compatible Excel
+    """
+    cleaned = re.sub(r'[\\/*?\[\]]', '_', str(name))
+    return cleaned[:31]
+
+def clean_filename(name):
+    """
+    Nettoie le nom de fichier
+    """
+    cleaned = re.sub(r'[\\/*?\[\]:]', '_', str(name))
+    return cleaned
 
 # CSS personnalisé avec design professionnel
 def load_css():
@@ -245,14 +261,17 @@ def show_welcome():
 def generate_frequency_table(df, variable, group_variable, max_categories=15):
     """
     Version robuste de génération de tableaux de fréquences
+    Avec gestion améliorée des types de données
     """
     try:
         # Vérifications de base
         if variable not in df.columns or group_variable not in df.columns:
             return pd.DataFrame({"Erreur": ["Colonne manquante"]})
         
-        # Nettoyer les données
-        df_clean = df[[variable, group_variable]].dropna()
+        # Nettoyer les données - conversion explicite en string
+        df_clean = df[[variable, group_variable]].dropna().copy()
+        df_clean[variable] = df_clean[variable].astype(str)
+        df_clean[group_variable] = df_clean[group_variable].astype(str)
         
         if df_clean.empty:
             return pd.DataFrame({"Message": ["Aucune donnée après nettoyage"]})
@@ -268,13 +287,16 @@ def generate_frequency_table(df, variable, group_variable, max_categories=15):
                 lambda x: x if x in top_categories else 'Autres'
             )
         
-        # Créer le tableau croisé
-        cross_tab = pd.crosstab(
-            df_clean[variable], 
-            df_clean[group_variable],
-            margins=True,
-            margins_name="Total"
-        )
+        # Créer le tableau croisé avec gestion d'erreur
+        try:
+            cross_tab = pd.crosstab(
+                df_clean[variable], 
+                df_clean[group_variable],
+                margins=True,
+                margins_name="Total"
+            )
+        except Exception as cross_error:
+            return pd.DataFrame({"Erreur": [f"Erreur création tableau: {str(cross_error)}"]})
         
         # Vérifier que le tableau n'est pas vide
         if cross_tab.empty:
@@ -286,7 +308,7 @@ def generate_frequency_table(df, variable, group_variable, max_categories=15):
             total_values = cross_tab.sum(axis=0)
             percent_tab = (cross_tab / total_values) * 100
             
-            # Formater le résultat
+            # Formater le résultat avec gestion des erreurs
             result_data = {}
             for col in cross_tab.columns:
                 result_data[col] = [
@@ -294,10 +316,12 @@ def generate_frequency_table(df, variable, group_variable, max_categories=15):
                     for count, percent in zip(cross_tab[col], percent_tab[col])
                 ]
             
-            return pd.DataFrame(result_data, index=cross_tab.index)
+            result_df = pd.DataFrame(result_data, index=cross_tab.index.astype(str))
+            return result_df
             
-        except Exception as e:
-            # Fallback: seulement les effectifs
+        except Exception as calc_error:
+            # Fallback: seulement les effectifs avec index string
+            cross_tab.index = cross_tab.index.astype(str)
             return cross_tab
             
     except Exception as e:
@@ -307,6 +331,7 @@ def generate_frequency_table(df, variable, group_variable, max_categories=15):
 def download_all_tables_excel(all_tables_data, var_interet):
     """
     Télécharge tous les tableaux de répartition dans un seul fichier Excel
+    Version corrigée des erreurs de caractères et de conversion
     """
     try:
         # Créer un fichier Excel en mémoire
@@ -322,9 +347,16 @@ def download_all_tables_excel(all_tables_data, var_interet):
             }
             
             for variable_name, table in all_tables_data.items():
+                # Nettoyer le nom de la feuille pour Excel
+                sheet_name = clean_sheet_name(variable_name)
+                
+                # S'assurer que l'index est de type string pour éviter les erreurs de conversion
+                table_display = table.copy()
+                table_display.index = table_display.index.astype(str)
+                table_display.columns = table_display.columns.astype(str)
+                
                 # Ajouter chaque tableau dans une feuille séparée
-                sheet_name = variable_name[:31]  # Excel limite à 31 caractères
-                table.to_excel(writer, sheet_name=sheet_name, index=True)
+                table_display.to_excel(writer, sheet_name=sheet_name, index=True)
                 
                 # Remplir le sommaire
                 summary_data['Variable'].append(variable_name)
@@ -346,7 +378,7 @@ def download_all_tables_excel(all_tables_data, var_interet):
                     'Généré par'
                 ],
                 'Valeur': [
-                    f'repartition_complete_{var_interet}.xlsx',
+                    f'repartition_complete_{clean_filename(var_interet)}.xlsx',
                     var_interet,
                     len(all_tables_data),
                     pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -380,20 +412,22 @@ def download_all_tables_excel(all_tables_data, var_interet):
         output.seek(0)
         
         # Télécharger le fichier
-        filename = f"repartition_complete_{var_interet}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        filename = f"repartition_complete_{clean_filename(var_interet)}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
         
         st.download_button(
             label="📥 Cliquez pour télécharger le fichier Excel complet",
             data=output.getvalue(),
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_all_tables_excel"
+            key=f"download_all_tables_excel_{pd.Timestamp.now().strftime('%Y%m%d%H%M%S')}"
         )
         
         st.success(f"✅ Fichier Excel généré avec succès! ({len(all_tables_data)} variables)")
         
     except Exception as e:
         st.error(f"❌ Erreur lors de la génération du fichier Excel: {str(e)}")
+        # Log détaillé pour le débogage
+        st.error(f"Détails de l'erreur: {type(e).__name__}")
 
 def telecharger_donnees():
     st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
@@ -564,7 +598,7 @@ def repartition_variables():
                         all_tables_data[variable] = table
                         
                         with st.expander(f"📋 {variable} ({df[variable].nunique()} catégories)", expanded=False):
-                            st.dataframe(table, use_container_width=True)
+                            st.dataframe(table, width='stretch')
                             
                             # Téléchargement individuel
                             try:
@@ -572,7 +606,7 @@ def repartition_variables():
                                 st.download_button(
                                     label=f"📥 Télécharger {variable} (CSV)",
                                     data=csv,
-                                    file_name=f"repartition_{variable.replace(' ', '_')}.csv",
+                                    file_name=f"repartition_{clean_filename(variable)}.csv",
                                     mime="text/csv",
                                     key=f"dl_{variable}_{i}"
                                 )
@@ -581,7 +615,7 @@ def repartition_variables():
                     else:
                         # Afficher les messages d'erreur
                         with st.expander(f"❌ {variable} - Problème", expanded=False):
-                            st.dataframe(table, use_container_width=True)
+                            st.dataframe(table, width='stretch')
                 else:
                     st.warning(f"⚠️ Tableau vide pour {variable}")
                     
@@ -678,7 +712,7 @@ def tableaux_croises():
                 else:
                     cross_table_display = cross_table
                 
-                st.dataframe(cross_table_display.style.format("{:.2f}" if display_type != "Effectifs" else "{:.0f}"))
+                st.dataframe(cross_table_display.style.format("{:.2f}" if display_type != "Effectifs" else "{:.0f}"), width='stretch')
                 
                 if show_chi2 and len(cross_table) > 1:
                     try:
@@ -758,7 +792,7 @@ def test_chi2_carre(df, var1, var2):
             else:
                 st.info("Aucune association significative (p ≥ 0.05)")
         st.write("**Tableau de contingence:**")
-        st.dataframe(contingency_table)
+        st.dataframe(contingency_table, width='stretch')
     except Exception as e:
         st.error(f"Erreur dans le test Chi-carré: {str(e)}")
 
@@ -775,7 +809,7 @@ def test_anova_ttest(df, cat_var, num_var):
                 st.info("Aucune différence significative entre les groupes (p ≥ 0.05)")
             st.write("**Statistiques par groupe:**")
             stats_by_group = df.groupby(cat_var)[num_var].agg(['mean', 'std', 'count'])
-            st.dataframe(stats_by_group)
+            st.dataframe(stats_by_group, width='stretch')
         else:
             f_stat, p_value = stats.f_oneway(*groups)
             st.metric("Statistique F", f"{f_stat:.4f}")
@@ -786,7 +820,7 @@ def test_anova_ttest(df, cat_var, num_var):
                 st.info("Aucune différence significative entre les groupes (p ≥ 0.05)")
             st.write("**Statistiques par groupe:**")
             stats_by_group = df.groupby(cat_var)[num_var].agg(['mean', 'std', 'count'])
-            st.dataframe(stats_by_group)
+            st.dataframe(stats_by_group, width='stretch')
     except Exception as e:
         st.error(f"Erreur dans le test ANOVA/Test-t: {str(e)}")
 
@@ -911,7 +945,7 @@ def tableaux_3d():
                 pivot_3d = df.pivot_table(index=var1, columns=[var2, var3], aggfunc='size', fill_value=0)
                 pivot_3d = (pivot_3d / pivot_3d.sum().sum()) * 100
             
-            st.dataframe(pivot_3d.style.background_gradient(cmap='Blues'))
+            st.dataframe(pivot_3d.style.background_gradient(cmap='Blues'), width='stretch')
             csv = pivot_3d.to_csv()
             st.download_button("📥 Télécharger le tableau 3D", data=csv, file_name=f"tableau_3d_{var1}_{var2}_{var3}.csv", mime="text/csv")
             
