@@ -148,6 +148,13 @@ def load_css():
             border-radius: 8px;
             margin: 1rem 0;
         }
+        .export-section {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 2px solid #667eea;
+            margin: 1rem 0;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -296,6 +303,97 @@ def generate_frequency_table(df, variable, group_variable, max_categories=15):
     except Exception as e:
         error_msg = f"Erreur avec {variable}: {str(e)}"
         return pd.DataFrame({"Erreur": [error_msg]})
+
+def download_all_tables_excel(all_tables_data, var_interet):
+    """
+    Télécharge tous les tableaux de répartition dans un seul fichier Excel
+    """
+    try:
+        # Créer un fichier Excel en mémoire
+        output = io.BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Feuille de sommaire
+            summary_data = {
+                'Variable': [],
+                'Nombre de Catégories': [],
+                'Dimensions du Tableau': [],
+                'Date de Génération': []
+            }
+            
+            for variable_name, table in all_tables_data.items():
+                # Ajouter chaque tableau dans une feuille séparée
+                sheet_name = variable_name[:31]  # Excel limite à 31 caractères
+                table.to_excel(writer, sheet_name=sheet_name, index=True)
+                
+                # Remplir le sommaire
+                summary_data['Variable'].append(variable_name)
+                summary_data['Nombre de Catégories'].append(len(table.index))
+                summary_data['Dimensions du Tableau'].append(f"{table.shape[0]}x{table.shape[1]}")
+                summary_data['Date de Génération'].append(pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"))
+            
+            # Créer la feuille de sommaire
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='SOMMAIRE', index=False)
+            
+            # Feuille de métadonnées
+            metadata_data = {
+                'Information': [
+                    'Nom du Fichier',
+                    'Variable d\'Intérêt',
+                    'Nombre de Variables Analysées',
+                    'Date de Création',
+                    'Généré par'
+                ],
+                'Valeur': [
+                    f'repartition_complete_{var_interet}.xlsx',
+                    var_interet,
+                    len(all_tables_data),
+                    pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'LogicApp Analytics Pro'
+                ]
+            }
+            metadata_df = pd.DataFrame(metadata_data)
+            metadata_df.to_excel(writer, sheet_name='METADONNEES', index=False)
+            
+            # Feuille avec les instructions
+            instructions_data = {
+                'Section': [
+                    'SOMMAIRE',
+                    'METADONNEES',
+                    'Feuilles des Variables'
+                ],
+                'Description': [
+                    'Vue d\'ensemble de toutes les variables analysées',
+                    'Informations techniques sur le fichier',
+                    'Une feuille par variable avec les répartitions détaillées'
+                ],
+                'Utilisation': [
+                    'Identifier rapidement les variables disponibles',
+                    'Comprendre le contexte de l\'analyse',
+                    'Analyser les répartitions détaillées par variable'
+                ]
+            }
+            instructions_df = pd.DataFrame(instructions_data)
+            instructions_df.to_excel(writer, sheet_name='INSTRUCTIONS', index=False)
+        
+        output.seek(0)
+        
+        # Télécharger le fichier
+        filename = f"repartition_complete_{var_interet}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        
+        st.download_button(
+            label="📥 Cliquez pour télécharger le fichier Excel complet",
+            data=output.getvalue(),
+            file_name=filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_all_tables_excel"
+        )
+        
+        st.success(f"✅ Fichier Excel généré avec succès! ({len(all_tables_data)} variables)")
+        
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la génération du fichier Excel: {str(e)}")
 
 def telecharger_donnees():
     st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
@@ -452,6 +550,7 @@ def repartition_variables():
     # Génération des tableaux
     progress_bar = st.progress(0)
     successful_tables = 0
+    all_tables_data = {}  # Stocker tous les tableaux pour l'export Excel
     
     for i, variable in enumerate(valid_variables):
         try:
@@ -461,15 +560,17 @@ def repartition_variables():
                 if table is not None and not table.empty:
                     if 'Erreur' not in table.columns and 'Message' not in table.columns:
                         successful_tables += 1
+                        # Stocker le tableau pour l'export Excel
+                        all_tables_data[variable] = table
                         
                         with st.expander(f"📋 {variable} ({df[variable].nunique()} catégories)", expanded=False):
                             st.dataframe(table, use_container_width=True)
                             
-                            # Téléchargement
+                            # Téléchargement individuel
                             try:
                                 csv = table.to_csv()
                                 st.download_button(
-                                    label=f"📥 Télécharger {variable}",
+                                    label=f"📥 Télécharger {variable} (CSV)",
                                     data=csv,
                                     file_name=f"repartition_{variable.replace(' ', '_')}.csv",
                                     mime="text/csv",
@@ -489,8 +590,46 @@ def repartition_variables():
         
         progress_bar.progress((i + 1) / len(valid_variables))
     
+    # SECTION TÉLÉCHARGEMENT GLOBAL - NOUVELLE FONCTIONNALITÉ
     if successful_tables > 0:
         st.success(f"✅ {successful_tables}/{len(valid_variables)} tableaux générés avec succès")
+        
+        st.markdown("---")
+        st.markdown("### 💾 Téléchargement Global des Résultats")
+        
+        # Section d'export avec style
+        st.markdown("""
+        <div class="export-section">
+            <h4>📊 Export Complet en Excel</h4>
+            <p>Exportez tous les tableaux de répartition dans un seul fichier Excel organisé</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.info("""
+            **Le fichier Excel contiendra:**
+            • Une feuille par variable avec son tableau complet
+            • Un sommaire avec toutes les statistiques
+            • Des métadonnées techniques
+            • Un guide d'utilisation
+            """)
+        
+        with col2:
+            if st.button("🚀 Générer le fichier Excel complet", type="primary", use_container_width=True):
+                download_all_tables_excel(all_tables_data, var_interet)
+        
+        # Statistiques de l'export
+        st.write(f"**📁 Contenu du fichier:**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Feuilles de données", len(all_tables_data))
+        with col2:
+            st.metric("Variables analysées", successful_tables)
+        with col3:
+            st.metric("Feuilles totales", len(all_tables_data) + 3)  # +3 pour sommaire, métadonnées, instructions
+        
     else:
         st.warning("⚠️ Aucun tableau n'a pu être généré. Vérifiez vos données.")
 
