@@ -198,55 +198,79 @@ class DataGenerator:
     # ============================================================
     # TABLEAUX DE CONTINGENCE - VERSION FINALE CORRIGÉE
     # ============================================================
-def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
-    """
-    Génère un tableau de contingence avec effectifs + pourcentages
-    - Les pourcentages sont calculés uniquement pour les cellules internes
-    - La dernière ligne et dernière colonne affichent seulement les effectifs
-    """
+    def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
+        """
+        Génère un tableau de contingence avec formules statistiques correctes.
+        Les totaux (dernière ligne et dernière colonne) affichent UNIQUEMENT les effectifs.
+        """
+        
+        # Vérification des colonnes
+        if var_ligne not in df.columns or var_col not in df.columns:
+            raise ValueError(f"Variables non trouvées: {var_ligne} ou {var_col}")
 
-    # Vérification des colonnes
-    if var_ligne not in df.columns or var_col not in df.columns:
-        raise ValueError(f"Variables non trouvées: {var_ligne} ou {var_col}")
+        # Tableau d'effectifs avec marges
+        effectifs = pd.crosstab(
+            df[var_ligne], 
+            df[var_col], 
+            margins=True, 
+            margins_name="Total"
+        )
+        
+        n_total = effectifs.loc["Total", "Total"]
 
-    # Tableau d'effectifs avec marges
-    effectifs = pd.crosstab(df[var_ligne], df[var_col], margins=True, margins_name="Total")
-    n_total = effectifs.loc["Total", "Total"]
+        # Tableau des pourcentages
+        pourcent = effectifs.copy().astype(float)
 
-    # Tableau des pourcentages : on ne calcule que pour les cellules internes
-    pourcent = pd.DataFrame(index=effectifs.index, columns=effectifs.columns, dtype=float)
+        for i in effectifs.index:
+            for j in effectifs.columns:
+                nij = effectifs.loc[i, j]
 
-    for i in effectifs.index[:-1]:  # toutes les lignes sauf Total
-        for j in effectifs.columns[:-1]:  # toutes les colonnes sauf Total
-            nij = effectifs.loc[i, j]
+                # --- 1. Calcul des pourcentages ---
+                
+                # Cellule Total-Total (coin inférieur droit)
+                if i == "Total" and j == "Total":
+                    pourcent.loc[i, j] = 100.0
+                    continue
 
-            if mode == "total":
-                pourcent.loc[i, j] = 100 * nij / n_total
-            elif mode == "ligne":
-                denom = effectifs.loc[i, "Total"]
-                pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
-            elif mode == "colonne":
-                denom = effectifs.loc["Total", j]
-                pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
+                # Cellules internes (ni dans la dernière ligne, ni dans la dernière colonne)
+                if i != "Total" and j != "Total":
+                    if mode == "total":
+                        # Pourcentages sur le total général
+                        pourcent.loc[i, j] = 100 * nij / n_total
 
-    # Combinaison effectifs + pourcentages
-    final = effectifs.copy().astype(object)
+                    elif mode == "ligne":
+                        # Pourcentages sur le total de la ligne
+                        denom = effectifs.loc[i, "Total"]
+                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
 
-    for i in effectifs.index:
-        for j in effectifs.columns:
-            e = effectifs.loc[i, j]
-
-            # Pour les cellules internes : ajouter le pourcentage
-            if i != "Total" and j != "Total":
-                p = round(pourcent.loc[i, j], 1)
-                final.loc[i, j] = f"{e} ({p}%)"
-            else:
-                # Dernière ligne ou dernière colonne : seulement l'effectif
-                final.loc[i, j] = str(e)
-
-    return final
+                    elif mode == "colonne":
+                        # Pourcentages sur le total de la colonne
+                        denom = effectifs.loc["Total", j]
+                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
+                
+                else:
+                    # Les totaux de marges (dernière ligne ou dernière colonne) n'ont pas de pourcentage
+                    # Nous mettons une valeur neutre qui ne sera pas affichée
+                    pourcent.loc[i, j] = 0.0
 
 
+        # --- 2. Formatage final (Effectif + Pourcentage) ---
+        
+        final = effectifs.copy().astype(object)
+        
+        for i in effectifs.index:
+            for j in effectifs.columns:
+                e = effectifs.loc[i, j]
+
+                # Afficher le pourcentage UNIQUEMENT pour les cellules internes
+                if i != "Total" and j != "Total":
+                    p = round(float(pourcent.loc[i, j]), 1)
+                    final.loc[i, j] = f"{e} ({p}%)"
+                else:
+                    # Dernière ligne ou dernière colonne (incluant Total-Total) : seulement l'effectif
+                    final.loc[i, j] = f"{e}"
+
+        return final
     # ------------------------------------------------------------
     def afficher_formules_statistiques(self):
         """Retourne les formules statistiques utilisées"""
