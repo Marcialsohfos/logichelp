@@ -1,203 +1,242 @@
 import pandas as pd
 import numpy as np
-from faker import Faker
-import random
-from datetime import datetime, timedelta
 
-class DataGenerator:
+def generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, pourcentage_type='total'):
     """
-    Classe pour générer des données d'exemple réalistes
+    Génère un tableau de contingence corrigé avec les bonnes formules statistiques
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame contenant les données
+    variable_ligne : str
+        Variable pour les lignes du tableau
+    variable_colonne : str
+        Variable pour les colonnes du tableau
+    pourcentage_type : str
+        Type de pourcentage : 'total', 'ligne', 'colonne'
+    
+    Returns:
+    --------
+    pd.DataFrame : Tableau de contingence formaté
     """
     
-    def __init__(self):
-        self.fake = Faker('fr_FR')
-        np.random.seed(42)
-        random.seed(42)
+    # Créer le tableau de contingence avec les effectifs
+    tableau_effectifs = pd.crosstab(
+        df[variable_ligne], 
+        df[variable_colonne],
+        margins=True,
+        margins_name='Total'
+    )
     
-    def generate_complex_dataset(self, n_observations=1000, n_categorical=5, 
-                               n_numerical=7, n_binary=3, missing_percentage=5.0):
-        """
-        Génère un dataset complexe avec différents types de variables
-        """
-        data = {}
-        
-        # Variables catégorielles
-        categorical_vars = self._generate_categorical_variables(n_categorical, n_observations)
-        data.update(categorical_vars)
-        
-        # Variables numériques
-        numerical_vars = self._generate_numerical_variables(n_numerical, n_observations)
-        data.update(numerical_vars)
-        
-        # Variables binaires
-        binary_vars = self._generate_binary_variables(n_binary, n_observations)
-        data.update(binary_vars)
-        
-        # Variable d'intérêt (cible)
-        data['Var_Interet'] = self._generate_target_variable(data, n_observations)
-        
-        # Créer le DataFrame
-        df = pd.DataFrame(data)
-        
-        # Ajouter des valeurs manquantes
-        if missing_percentage > 0:
-            df = self._add_missing_values(df, missing_percentage)
-        
-        return df
+    # Calculer les pourcentages selon le type choisi
+    n_total = tableau_effectifs.loc['Total', 'Total']  # n.. effectif total
     
-    def _generate_categorical_variables(self, n_vars, n_obs):
-        """
-        Génère des variables catégorielles réalistes
-        """
-        vars_dict = {}
-        
-        # Catégories prédéfinies pour plus de réalisme
-        categories = {
-            'Region': ['Nord', 'Sud', 'Est', 'Ouest', 'Centre'],
-            'Type_Etablissement': ['Hôpital', 'Clinique', 'Laboratoire', 'Centre de santé', 'Dispensaire'],
-            'Niveau_Complexite': ['Level I', 'Level II', 'Level III', 'Level IV'],
-            'Specialite': ['Généraliste', 'Cardiologie', 'Pédiatrie', 'Chirurgie', 'Urgence'],
-            'Statut': ['Public', 'Privé', 'Mixte'],
-            'Zone': ['Urbaine', 'Rurale', 'Périurbaine'],
-            'Accreditation': ['Oui', 'Non', 'En cours'],
-            'Equipement': ['Basique', 'Intermédiaire', 'Avancé'],
-            'Personnel': ['Insuffisant', 'Adéquat', 'Abondant'],
-            'Financement': ['Etat', 'Privé', 'International', 'Mixte']
-        }
-        
-        category_keys = list(categories.keys())
-        
-        for i in range(n_vars):
-            if i < len(category_keys):
-                var_name = category_keys[i]
-                categories_list = categories[var_name]
-            else:
-                var_name = f"Cat_Var_{i+1}"
-                categories_list = [f'Cat_{j}' for j in range(random.randint(3, 8))]
+    if pourcentage_type == 'total':
+        # Pourcentages par rapport au total général (fréquences conjointes)
+        tableau_pourcentages = (tableau_effectifs / n_total * 100).round(1)
+    elif pourcentage_type == 'ligne':
+        # Pourcentages par ligne (profil ligne)
+        tableau_pourcentages = (tableau_effectifs.div(tableau_effectifs.sum(axis=1), axis=0) * 100).round(1)
+    elif pourcentage_type == 'colonne':
+        # Pourcentages par colonne (profil colonne)
+        tableau_pourcentages = (tableau_effectifs.div(tableau_effectifs.sum(axis=0), axis=1) * 100).round(1)
+    else:
+        raise ValueError("Type de pourcentage doit être 'total', 'ligne' ou 'colonne'")
+    
+    # Combiner effectifs et pourcentages
+    tableau_final = tableau_effectifs.copy().astype(object)
+    
+    for i in range(tableau_effectifs.shape[0]):
+        for j in range(tableau_effectifs.shape[1]):
+            effectif = tableau_effectifs.iloc[i, j]
+            pourcentage = tableau_pourcentages.iloc[i, j]
             
-            vars_dict[var_name] = np.random.choice(
-                categories_list, 
-                n_obs,
-                p=[1/len(categories_list)] * len(categories_list)
-            )
-        
-        return vars_dict
-    
-    def _generate_numerical_variables(self, n_vars, n_obs):
-        """
-        Génère des variables numériques réalistes
-        """
-        vars_dict = {}
-        
-        # Distributions variées pour plus de réalisme
-        numerical_configs = [
-            {'name': 'Age_Patients', 'dist': 'normal', 'params': [45, 15], 'min': 18, 'max': 90},
-            {'name': 'Nombre_Lits', 'dist': 'poisson', 'params': [50], 'min': 10, 'max': 200},
-            {'name': 'Budget_Annuel', 'dist': 'lognormal', 'params': [12, 1.5], 'min': 50000, 'max': 5000000},
-            {'name': 'Personnel_Medical', 'dist': 'normal', 'params': [25, 10], 'min': 5, 'max': 100},
-            {'name': 'Patients_Jour', 'dist': 'poisson', 'params': [30], 'min': 5, 'max': 100},
-            {'name': 'Taux_Occupation', 'dist': 'beta', 'params': [2, 2], 'min': 0.3, 'max': 0.95},
-            {'name': 'Distance_Hopital', 'dist': 'exponential', 'params': [0.1], 'min': 0, 'max': 50},
-            {'name': 'Satisfaction_Patients', 'dist': 'normal', 'params': [7.5, 1.5], 'min': 1, 'max': 10},
-            {'name': 'Duree_Sejour', 'dist': 'gamma', 'params': [2, 2], 'min': 1, 'max': 30},
-            {'name': 'Cout_Operation', 'dist': 'lognormal', 'params': [8, 1], 'min': 100, 'max': 10000}
-        ]
-        
-        for i in range(n_vars):
-            if i < len(numerical_configs):
-                config = numerical_configs[i]
-                var_name = config['name']
-                
-                if config['dist'] == 'normal':
-                    values = np.random.normal(config['params'][0], config['params'][1], n_obs)
-                elif config['dist'] == 'poisson':
-                    values = np.random.poisson(config['params'][0], n_obs)
-                elif config['dist'] == 'lognormal':
-                    values = np.random.lognormal(config['params'][0], config['params'][1], n_obs)
-                elif config['dist'] == 'beta':
-                    values = np.random.beta(config['params'][0], config['params'][1], n_obs)
-                elif config['dist'] == 'exponential':
-                    values = np.random.exponential(config['params'][0], n_obs)
-                elif config['dist'] == 'gamma':
-                    values = np.random.gamma(config['params'][0], config['params'][1], n_obs)
+            if pd.notna(effectif) and pd.notna(pourcentage):
+                if i == tableau_effectifs.shape[0]-1 or j == tableau_effectifs.shape[1]-1:
+                    # Pour les totaux, afficher seulement l'effectif
+                    tableau_final.iloc[i, j] = f"{effectif}"
                 else:
-                    values = np.random.normal(0, 1, n_obs)
-                
-                # Appliquer les limites
-                values = np.clip(values, config['min'], config['max'])
-                
+                    tableau_final.iloc[i, j] = f"{effectif} ({pourcentage}%)"
             else:
-                var_name = f"Num_Var_{i+1}"
-                values = np.random.normal(0, 1, n_obs)
-                values = np.round(values, 2)
-            
-            vars_dict[var_name] = values
-        
-        return vars_dict
+                tableau_final.iloc[i, j] = "0 (0.0%)"
     
-    def _generate_binary_variables(self, n_vars, n_obs):
-        """
-        Génère des variables binaires
-        """
-        vars_dict = {}
-        
-        binary_configs = [
-            {'name': 'Urgence_Disponible', 'p': 0.7},
-            {'name': 'Laboratoire_Interne', 'p': 0.6},
-            {'name': 'Radiologie', 'p': 0.5},
-            {'name': 'Pharmacy', 'p': 0.8},
-            {'name': 'Ambulance', 'p': 0.4},
-            {'name': 'Bloc_Operatoire', 'p': 0.3},
-            {'name': 'Soins_Intensifs', 'p': 0.2}
-        ]
-        
-        for i in range(n_vars):
-            if i < len(binary_configs):
-                config = binary_configs[i]
-                var_name = config['name']
-                p = config['p']
-            else:
-                var_name = f"Bin_Var_{i+1}"
-                p = random.uniform(0.2, 0.8)
-            
-            vars_dict[var_name] = np.random.choice([0, 1], n_obs, p=[1-p, p])
-        
-        return vars_dict
+    return tableau_final
+
+def generer_tableau_complet(df, variable_ligne, variable_colonne, titre=None):
+    """
+    Génère un tableau complet avec les trois types de pourcentages
+    """
+    if titre is None:
+        titre = f"Répartition des {variable_ligne} selon {variable_colonne}"
     
-    def _generate_target_variable(self, data, n_obs):
-        """
-        Génère une variable cible corrélée avec d'autres variables
-        """
-        # Créer une variable cible basée sur une combinaison linéaire
-        target = np.zeros(n_obs)
-        
-        # Ajouter de l'aléatoire
-        target += np.random.normal(0, 1, n_obs)
-        
-        # Ajouter des corrélations avec certaines variables numériques
-        numerical_keys = [k for k in data.keys() if isinstance(data[k], np.ndarray) and data[k].dtype in [np.float64, np.int64]]
-        
-        for i, key in enumerate(numerical_keys[:3]):  # Utiliser les 3 premières variables numériques
-            if len(data[key]) == n_obs:
-                target += 0.3 * (data[key] - np.mean(data[key])) / np.std(data[key])
-        
-        # Convertir en variable catégorielle pour la classification
-        quartiles = np.percentile(target, [25, 50, 75])
-        target_cat = np.digitize(target, quartiles)
-        categories = ['Faible', 'Moyen', 'Élevé', 'Très élevé']
-        
-        return [categories[min(i, 3)] for i in target_cat]
+    # Tableau avec pourcentages totaux (fréquences conjointes)
+    tableau_total = generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, 'total')
     
-    def _add_missing_values(self, df, percentage):
-        """
-        Ajoute des valeurs manquantes aléatoires
-        """
-        df_with_na = df.copy()
-        n_missing = int(len(df) * len(df.columns) * percentage / 100)
+    # Tableau avec pourcentages ligne
+    tableau_ligne = generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, 'ligne')
+    
+    # Tableau avec pourcentages colonne
+    tableau_colonne = generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, 'colonne')
+    
+    return {
+        'total': tableau_total,
+        'ligne': tableau_ligne,
+        'colonne': tableau_colonne,
+        'titre': titre
+    }
+
+# Fonction utilitaire pour afficher les tableaux dans Streamlit
+def afficher_tableau_contingence_streamlit(df, variable_ligne, variable_colonne, type_pourcentage='total'):
+    """
+    Affiche un tableau de contingence dans Streamlit
+    """
+    tableau = generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, type_pourcentage)
+    
+    # Déterminer le titre selon le type de pourcentage
+    if type_pourcentage == 'total':
+        titre = f"Répartition des {variable_ligne} selon {variable_colonne} - Pourcentages totaux"
+    elif type_pourcentage == 'ligne':
+        titre = f"Répartition des {variable_ligne} selon {variable_colonne} - Pourcentages ligne"
+    else:
+        titre = f"Répartition des {variable_ligne} selon {variable_colonne} - Pourcentages colonne"
+    
+    st.subheader(titre)
+    st.dataframe(tableau, use_container_width=True)
+    
+    # Ajouter une explication
+    if type_pourcentage == 'total':
+        st.caption("📊 **Lecture** : Effectifs (pourcentage du total général) - pij = nij/n.. × 100")
+    elif type_pourcentage == 'ligne':
+        st.caption("📊 **Lecture** : Effectifs (pourcentage de la ligne) - pij = nij/ni. × 100")
+    else:
+        st.caption("📊 **Lecture** : Effectifs (pourcentage de la colonne) - pij = nij/n.j × 100")
+
+# Version alternative avec calcul détaillé pour debug
+def generer_tableau_detaille(df, variable_ligne, variable_colonne):
+    """
+    Génère un tableau détaillé avec tous les calculs pour vérification
+    """
+    # Tableau de base
+    tableau_base = pd.crosstab(df[variable_ligne], df[variable_colonne], margins=True)
+    
+    # Calculs détaillés
+    n_total = tableau_base.loc['All', 'All']
+    
+    st.write("### 🔍 Calculs détaillés du tableau de contingence")
+    
+    st.write("**Tableau des effectifs (nij):**")
+    st.dataframe(tableau_base)
+    
+    st.write("**Marges ligne (ni.):**")
+    st.write(tableau_base.sum(axis=1))
+    
+    st.write("**Marges colonne (n.j):**")
+    st.write(tableau_base.sum(axis=0))
+    
+    st.write(f"**Effectif total (n..):** {n_total}")
+    
+    # Tableau corrigé
+    st.write("### ✅ Tableau corrigé avec pourcentages totaux")
+    tableau_corrige = generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, 'total')
+    st.dataframe(tableau_corrige)
+
+# Test avec vos données d'exemple
+def tester_tableau_corrige():
+    """
+    Teste la fonction avec des données similaires aux vôtres
+    """
+    # Créer des données de test similaires
+    data_test = {
+        'Type_Etablissement': ['public'] * 234 + ['private'] * 30 + ['confessionnel'] * 20 + 
+                             ['public'] * 120 + ['private'] * 56 + ['confessionnel'] * 35 +
+                             ['public'] * 30 + ['confessionnel'] * 2 +
+                             ['public'] * 21,
+        'Niveau_Complexite': ['Level I'] * 284 + ['Level II'] * 211 + ['Level III'] * 32 + ['Level IV'] * 21
+    }
+    
+    df_test = pd.DataFrame(data_test)
+    
+    st.write("## 🧪 Test de la fonction corrigée")
+    
+    # Tableau avec pourcentages totaux (CORRIGÉ)
+    tableau_corrige = generer_tableau_contingence_corrige(df_test, 'Type_Etablissement', 'Niveau_Complexite', 'total')
+    
+    st.write("### 📋 VOTRE TABLEAU CORRIGÉ (avec pourcentages totaux)")
+    st.dataframe(tableau_corrige)
+    
+    # Vérification des calculs
+    st.write("### 🔍 Vérification des calculs")
+    
+    # Calcul manuel pour public, Level I
+    n_public_level1 = 234
+    n_total = len(df_test)
+    pourcentage_calcule = (n_public_level1 / n_total * 100)
+    
+    st.write(f"Public, Level I: {n_public_level1} / {n_total} × 100 = {pourcentage_calcule:.1f}%")
+    
+    return tableau_corrige
+
+# Intégration dans votre application Streamlit existante
+def ajouter_analyse_contingence_streamlit(df):
+    """
+    Ajoute une section d'analyse de contingence à votre app Streamlit
+    """
+    st.header("📊 Analyse des Tableaux de Contingence")
+    
+    # Sélection des variables
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        variable_ligne = st.selectbox(
+            "Variable pour les lignes:",
+            options=df.columns,
+            index=0
+        )
+    
+    with col2:
+        variable_colonne = st.selectbox(
+            "Variable pour les colonnes:",
+            options=df.columns,
+            index=1 if len(df.columns) > 1 else 0
+        )
+    
+    # Type de pourcentage
+    type_pourcentage = st.radio(
+        "Type de pourcentage:",
+        options=['total', 'ligne', 'colonne'],
+        format_func=lambda x: {
+            'total': 'Pourcentages totaux (pij = nij/n.. × 100)',
+            'ligne': 'Pourcentages ligne (pij = nij/ni. × 100)',
+            'colonne': 'Pourcentages colonne (pij = nij/n.j × 100)'
+        }[x],
+        horizontal=True
+    )
+    
+    # Générer et afficher le tableau
+    if st.button("🔄 Générer le tableau de contingence", type="primary"):
+        afficher_tableau_contingence_streamlit(df, variable_ligne, variable_colonne, type_pourcentage)
         
-        for _ in range(n_missing):
-            col = np.random.choice(df.columns)
-            row = np.random.randint(0, len(df))
-            df_with_na.loc[row, col] = np.nan
+        # Option pour télécharger le tableau
+        tableau = generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, type_pourcentage)
         
-        return df_with_na
+        # Convertir en Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            tableau.to_excel(writer, sheet_name='Tableau_Contingence')
+        output.seek(0)
+        
+        st.download_button(
+            label="📥 Télécharger le tableau Excel",
+            data=output,
+            file_name=f"tableau_contingence_{variable_ligne}_{variable_colonne}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+# Exemple d'utilisation dans votre main Streamlit
+"""
+# Dans votre fonction main() de Streamlit, ajoutez:
+
+if st.sidebar.checkbox("📊 Analyse des tableaux de contingence"):
+    ajouter_analyse_contingence_streamlit(df)
+"""
