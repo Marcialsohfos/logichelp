@@ -6,9 +6,11 @@ import pandas as pd
 import numpy as np
 from faker import Faker
 import random
+import streamlit as st
+import io
 
 # ================================================================
-#  CLASS: DATA GENERATOR
+#  CLASS: DATA GENERATOR
 # ================================================================
 class DataGenerator:
     """
@@ -200,8 +202,10 @@ class DataGenerator:
     # ============================================================
     def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
         """
-        Génère un tableau de contingence avec formules statistiques correctes
-        SANS pourcentages dans la dernière ligne (Total) et dernière colonne (Total)
+        Génère un tableau de contingence avec formules statistiques correctes.
+        Les totaux affichent uniquement les effectifs (pas de pourcentage) SAUF
+        lorsque le mode est 'ligne' ou 'colonne', où le total de marge correspondant
+        est affiché comme 100.0 (sans le '%' final pour la lisibilité).
         """
         
         # Vérification des colonnes
@@ -227,18 +231,22 @@ class DataGenerator:
 
                 # Cellule Total-Total (coin inférieur droit)
                 if i == "Total" and j == "Total":
-                    pourcent.loc[i, j] = 100.0
+                    pourcent.loc[i, j] = 100.0  # Total général (100%)
                     continue
 
                 # MODE TOTAL
                 if mode == "total":
+                    # Pourcentages sur le total général pour toutes les cellules
                     pourcent.loc[i, j] = 100 * nij / n_total
 
                 # MODE LIGNE
                 elif mode == "ligne":
-                    if i == "Total" or j == "Total":
-                        # Pour les totaux, on calcule mais n'affichera pas
+                    if i == "Total":
+                        # Pourcentages de la dernière ligne (Totaux de colonnes / n_total)
                         pourcent.loc[i, j] = 100 * nij / n_total
+                    elif j == "Total":
+                        # Total de la ligne (doit être 100% par définition)
+                        pourcent.loc[i, j] = 100.0
                     else:
                         # Cellules internes : pourcentage ligne
                         denom = effectifs.loc[i, "Total"]
@@ -246,8 +254,11 @@ class DataGenerator:
 
                 # MODE COLONNE
                 elif mode == "colonne":
-                    if i == "Total" or j == "Total":
-                        # Pour les totaux, on calcule mais n'affichera pas
+                    if i == "Total":
+                        # Total de la colonne (doit être 100% par définition)
+                        pourcent.loc[i, j] = 100.0
+                    elif j == "Total":
+                        # Pourcentages de la dernière colonne (Totaux de ligne / n_total)
                         pourcent.loc[i, j] = 100 * nij / n_total
                     else:
                         # Cellules internes : pourcentage colonne
@@ -263,14 +274,22 @@ class DataGenerator:
                 e = effectifs.loc[i, j]
                 p = round(float(pourcent.loc[i, j]), 1)
 
-                # Afficher les pourcentages UNIQUEMENT pour les cellules qui ne sont pas 
-                # dans la dernière ligne ET pas dans la dernière colonne
+                # Si on n'est PAS dans la dernière ligne ET PAS dans la dernière colonne (Cellules internes)
                 if i != "Total" and j != "Total":
-                    # Cellules internes : avec pourcentage
                     final.loc[i, j] = f"{e} ({p}%)"
+                
+                # Cas Totaux (Dernière ligne OU dernière colonne)
                 else:
-                    # Dernière ligne OU dernière colonne : seulement l'effectif
-                    final.loc[i, j] = f"{e}"
+                    # Afficher 100.0 pour le total de marge concerné par le mode sélectionné (pour la vérification)
+                    if (mode == "ligne" and j == "Total" and i != "Total") or \
+                       (mode == "colonne" and i == "Total" and j != "Total"):
+                        # Total de la ligne (mode ligne) ou Total de la colonne (mode colonne)
+                        # On affiche l'effectif ET la valeur de 100.0 (sans le %)
+                        final.loc[i, j] = f"{e} ({p})" 
+                    else:
+                        # Autres totaux (Total-Total, Total ligne mode colonne, Total col mode ligne, mode total)
+                        # Seulement l'effectif
+                        final.loc[i, j] = f"{e}"
 
         return final
 
@@ -281,42 +300,41 @@ class DataGenerator:
 📊 **FORMULES STATISTIQUES APPLIQUÉES**
 
 **Notations :**
-- n.. = effectif total  
-- nij = effectif de la cellule (i,j)  
-- ni. = total de la ligne i  
-- n.j = total de la colonne j  
+- $n_{..}$ = effectif total  
+- $n_{ij}$ = effectif de la cellule $(i,j)$  
+- $n_{i.}$ = total de la ligne $i$  
+- $n_{.j}$ = total de la colonne $j$  
 
 **Types de pourcentages :**
 
 🟦 **POURCENTAGES TOTAUX**
-• Cellules : pij = nij / n.. × 100
-• Totaux : effectifs seulement
+• Cellules : $p_{ij} = n_{ij} / n_{..} \times 100$
+• Totaux : effectifs seulement.
 
-🟩 **POURCENTAGES LIGNE**  
-• Cellules : pij = nij / ni. × 100
-• Totaux : effectifs seulement
+🟩 **POURCENTAGES LIGNE**
+• Cellules : $p_{ij} = n_{ij} / n_{i.} \times 100$
+• **Total de Ligne (marge) :** Effectif suivi de **100.0** (sans le `%`) pour confirmer la somme des pourcentages de ligne.
+• Autres Totaux : effectifs seulement.
 
 🟨 **POURCENTAGES COLONNE**
-• Cellules : pij = nij / n.j × 100  
-• Totaux : effectifs seulement
+• Cellules : $p_{ij} = n_{ij} / n_{.j} \times 100$
+• **Total de Colonne (marge) :** Effectif suivi de **100.0** (sans le `%`) pour confirmer la somme des pourcentages de colonne.
+• Autres Totaux : effectifs seulement.
 
 **Particularités :**
-• Les totaux (dernière ligne et dernière colonne) n'affichent QUE les effectifs
-• Le coin Total-Total affiche l'effectif général sans pourcentage
-• Arrondi à 1 décimale pour tous les pourcentages des cellules internes
+• Le coin Total-Total affiche l'effectif général.
+• Arrondi à 1 décimale pour tous les pourcentages des cellules internes.
 """
 
 
 # ================================================================
-#  INTERFACE STREAMLIT
+#  INTERFACE STREAMLIT
 # ================================================================
 def creer_interface_tableaux_contingence(df):
     """
     Crée une interface Streamlit pour les tableaux de contingence
     """
-    import streamlit as st
-    import io
-
+    
     st.header("📊 Tableaux de Contingence - Version Finale Corrigée")
 
     gen = DataGenerator()
@@ -324,7 +342,9 @@ def creer_interface_tableaux_contingence(df):
     # Section informations
     with st.expander("ℹ️ Informations et formules"):
         st.markdown(gen.afficher_formules_statistiques())
-        st.info("**Note importante :** Les totaux (dernière ligne et dernière colonne) n'affichent QUE les effectifs, pas les pourcentages")
+        st.info(
+            "**Note importante :** En mode **Ligne** ou **Colonne**, le total de marge correspondant affiche **(100.0)** après l'effectif pour indiquer que la somme des pourcentages des cellules internes est bien 100%."
+        )
 
     # Sélection des variables
     col1, col2 = st.columns(2)
@@ -394,9 +414,16 @@ if __name__ == "__main__":
     df = gen.generate_complex_dataset(300)
     print(f"✅ Dataset généré : {df.shape[0]} observations, {df.shape[1]} variables")
     
-    # Test des tableaux de contingence
+    # Test des tableaux de contingence (mode ligne)
     print("\n📋 Test tableau de contingence (mode ligne) :")
-    tableau_test = gen.generer_tableau_contingence_corrige(
+    tableau_test_ligne = gen.generer_tableau_contingence_corrige(
         df, "Type_Etablissement", "Niveau_Complexite", "ligne"
     )
-    print(tableau_test)
+    print(tableau_test_ligne)
+
+    # Test des tableaux de contingence (mode colonne)
+    print("\n📋 Test tableau de contingence (mode colonne) :")
+    tableau_test_colonne = gen.generer_tableau_contingence_corrige(
+        df, "Type_Etablissement", "Niveau_Complexite", "colonne"
+    )
+    print(tableau_test_colonne)
