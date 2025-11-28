@@ -1,5 +1,5 @@
 # ================================================================
-# data_generator.py - Version améliorée et corrigée
+# data_generator.py - Version FINALE CORRIGÉE
 # ================================================================
 
 import pandas as pd
@@ -196,17 +196,12 @@ class DataGenerator:
         return df2
 
     # ============================================================
-    # TABLEAUX DE CONTINGENCE - VERSION AMÉLIORÉE
+    # TABLEAUX DE CONTINGENCE - VERSION FINALE CORRIGÉE
     # ============================================================
     def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
         """
         Génère un tableau de contingence avec formules statistiques correctes
-        SANS pourcentages dans les totaux ligne/colonne
-        
-        Formules appliquées :
-        - Mode 'total' : pij = nij / n.. × 100
-        - Mode 'ligne' : pij = nij / ni. × 100
-        - Mode 'colonne' : pij = nij / n.j × 100
+        SANS pourcentages dans la dernière ligne (Total) et dernière colonne (Total)
         """
         
         # Vérification des colonnes
@@ -232,18 +227,14 @@ class DataGenerator:
 
                 # Cellule Total-Total (coin inférieur droit)
                 if i == "Total" and j == "Total":
-                    pourcent.loc[i, j] = 100.0  # Toujours 100%
+                    pourcent.loc[i, j] = 100.0
                     continue
 
-                # -----------------------------
                 # MODE TOTAL
-                # -----------------------------
                 if mode == "total":
                     pourcent.loc[i, j] = 100 * nij / n_total
 
-                # -----------------------------
                 # MODE LIGNE
-                # -----------------------------
                 elif mode == "ligne":
                     if i == "Total" or j == "Total":
                         # Pour les totaux, on calcule mais n'affichera pas
@@ -253,9 +244,7 @@ class DataGenerator:
                         denom = effectifs.loc[i, "Total"]
                         pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
 
-                # -----------------------------
                 # MODE COLONNE
-                # -----------------------------
                 elif mode == "colonne":
                     if i == "Total" or j == "Total":
                         # Pour les totaux, on calcule mais n'affichera pas
@@ -265,7 +254,8 @@ class DataGenerator:
                         denom = effectifs.loc["Total", j]
                         pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
 
-        # Combinaison Effectifs + Pourcentages (SANS pourcentages dans les totaux)
+        # CORRECTION : Combinaison Effectifs + Pourcentages 
+        # SANS pourcentages dans la DERNIÈRE LIGNE (Total) et DERNIÈRE COLONNE (Total)
         final = effectifs.copy().astype(object)
         
         for i in effectifs.index:
@@ -273,11 +263,13 @@ class DataGenerator:
                 e = effectifs.loc[i, j]
                 p = round(float(pourcent.loc[i, j]), 1)
 
-                # Afficher les pourcentages UNIQUEMENT pour les cellules internes
+                # Afficher les pourcentages UNIQUEMENT pour les cellules qui ne sont pas 
+                # dans la dernière ligne ET pas dans la dernière colonne
                 if i != "Total" and j != "Total":
+                    # Cellules internes : avec pourcentage
                     final.loc[i, j] = f"{e} ({p}%)"
                 else:
-                    # Pour les totaux : seulement l'effectif
+                    # Dernière ligne OU dernière colonne : seulement l'effectif
                     final.loc[i, j] = f"{e}"
 
         return final
@@ -309,14 +301,14 @@ class DataGenerator:
 • Totaux : effectifs seulement
 
 **Particularités :**
-• Les totaux (ligne et colonne) n'affichent QUE les effectifs
-• Le coin Total-Total affiche l'effectif général
-• Arrondi à 1 décimale pour tous les pourcentages
+• Les totaux (dernière ligne et dernière colonne) n'affichent QUE les effectifs
+• Le coin Total-Total affiche l'effectif général sans pourcentage
+• Arrondi à 1 décimale pour tous les pourcentages des cellules internes
 """
 
 
 # ================================================================
-#  INTERFACE STREAMLIT AMÉLIORÉE
+#  INTERFACE STREAMLIT
 # ================================================================
 def creer_interface_tableaux_contingence(df):
     """
@@ -325,14 +317,14 @@ def creer_interface_tableaux_contingence(df):
     import streamlit as st
     import io
 
-    st.header("📊 Tableaux de Contingence - Version Améliorée")
+    st.header("📊 Tableaux de Contingence - Version Finale Corrigée")
 
     gen = DataGenerator()
     
     # Section informations
     with st.expander("ℹ️ Informations et formules"):
         st.markdown(gen.afficher_formules_statistiques())
-        st.info("**Note :** Les totaux n'affichent que les effectifs, pas les pourcentages")
+        st.info("**Note importante :** Les totaux (dernière ligne et dernière colonne) n'affichent QUE les effectifs, pas les pourcentages")
 
     # Sélection des variables
     col1, col2 = st.columns(2)
@@ -390,25 +382,7 @@ def creer_interface_tableaux_contingence(df):
 
 
 # ================================================================
-# FONCTIONS UTILITAIRES SUPPLEMENTAIRES
-# ================================================================
-def analyser_dataset(df):
-    """
-    Fournit une analyse rapide du dataset
-    """
-    analysis = {
-        "Nombre d'observations": len(df),
-        "Nombre de variables": len(df.columns),
-        "Variables catégorielles": df.select_dtypes(include=['object']).columns.tolist(),
-        "Variables numériques": df.select_dtypes(include=[np.number]).columns.tolist(),
-        "Valeurs manquantes totales": df.isnull().sum().sum(),
-        "Taux de valeurs manquantes": f"{(df.isnull().sum().sum() / df.size * 100):.1f}%"
-    }
-    return analysis
-
-
-# ================================================================
-# TEST ET EXEMPLE D'UTILISATION
+# TEST
 # ================================================================
 if __name__ == "__main__":
     # Test des fonctions
@@ -420,16 +394,9 @@ if __name__ == "__main__":
     df = gen.generate_complex_dataset(300)
     print(f"✅ Dataset généré : {df.shape[0]} observations, {df.shape[1]} variables")
     
-    # Analyse du dataset
-    analyse = analyser_dataset(df)
-    print(f"📊 Analyse : {analyse['Nombre d\'observations']} obs, {analyse['Nombre de variables']} vars")
-    
     # Test des tableaux de contingence
     print("\n📋 Test tableau de contingence (mode ligne) :")
     tableau_test = gen.generer_tableau_contingence_corrige(
         df, "Type_Etablissement", "Niveau_Complexite", "ligne"
     )
     print(tableau_test)
-    
-    print("\n" + "="*60)
-    print(gen.afficher_formules_statistiques())
