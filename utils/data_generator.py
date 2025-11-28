@@ -4,166 +4,173 @@ from faker import Faker
 import random
 from datetime import datetime, timedelta
 
+# ======================================================================
+#  CLASSE PRINCIPALE : GENERATION DE DONNÉES
+# ======================================================================
+
 class DataGenerator:
     """
-    Classe pour générer des données d'exemple réalistes
+    Classe permettant de générer :
+    - datasets complexes (catégorielles, numériques, binaires, cible)
+    - tableaux de contingence 100% corrects statistiquement
     """
-    
+
     def __init__(self):
-        self.fake = Faker('fr_FR')
+        self.fake = Faker("fr_FR")
         np.random.seed(42)
         random.seed(42)
-    
-    def generate_complex_dataset(self, n_observations=1000, n_categorical=5, 
-                               n_numerical=7, n_binary=3, missing_percentage=5.0):
+
+    # ==================================================================
+    #  GENERATION DU DATASET RÉALISTE
+    # ==================================================================
+
+    def generate_complex_dataset(self, n_observations=1000, n_categorical=5,
+                                 n_numerical=7, n_binary=3, missing_percentage=5.0):
         """
         Génère un dataset complexe avec différents types de variables
         """
         data = {}
-        
+
         # Variables catégorielles
-        categorical_vars = self._generate_categorical_variables(n_categorical, n_observations)
-        data.update(categorical_vars)
-        
+        data.update(self._generate_categorical_variables(n_categorical, n_observations))
+
         # Variables numériques
-        numerical_vars = self._generate_numerical_variables(n_numerical, n_observations)
-        data.update(numerical_vars)
-        
+        data.update(self._generate_numerical_variables(n_numerical, n_observations))
+
         # Variables binaires
-        binary_vars = self._generate_binary_variables(n_binary, n_observations)
-        data.update(binary_vars)
-        
-        # Variable d'intérêt (cible)
-        data['Var_Interet'] = self._generate_target_variable(data, n_observations)
-        
-        # Créer le DataFrame
+        data.update(self._generate_binary_variables(n_binary, n_observations))
+
+        # Variable cible corrélée
+        data["Var_Interet"] = self._generate_target_variable(data, n_observations)
+
+        # Construction du DataFrame
         df = pd.DataFrame(data)
-        
-        # Ajouter des valeurs manquantes
+
+        # Ajout de NA
         if missing_percentage > 0:
             df = self._add_missing_values(df, missing_percentage)
-        
+
         return df
-    
+
+    # -------------------------------------------------------------------
+
     def _generate_categorical_variables(self, n_vars, n_obs):
         """
         Génère des variables catégorielles réalistes
         """
         vars_dict = {}
-        
-        # Catégories prédéfinies pour plus de réalisme
-        categories = {
-            'Region': ['Nord', 'Sud', 'Est', 'Ouest', 'Centre'],
-            'Type_Etablissement': ['Hôpital', 'Clinique', 'Laboratoire', 'Centre de santé', 'Dispensaire'],
-            'Niveau_Complexite': ['Level I', 'Level II', 'Level III', 'Level IV'],
-            'Specialite': ['Généraliste', 'Cardiologie', 'Pédiatrie', 'Chirurgie', 'Urgence'],
-            'Statut': ['Public', 'Privé', 'Mixte'],
-            'Zone': ['Urbaine', 'Rurale', 'Périurbaine'],
-            'Accreditation': ['Oui', 'Non', 'En cours'],
-            'Equipement': ['Basique', 'Intermédiaire', 'Avancé'],
-            'Personnel': ['Insuffisant', 'Adéquat', 'Abondant'],
-            'Financement': ['Etat', 'Privé', 'International', 'Mixte']
+
+        predefined = {
+            "Region": ["Nord", "Sud", "Est", "Ouest", "Centre"],
+            "Type_Etablissement": ["Hôpital", "Clinique", "Laboratoire", "Centre de santé", "Dispensaire"],
+            "Niveau_Complexite": ["Level I", "Level II", "Level III", "Level IV"],
+            "Specialite": ["Généraliste", "Cardiologie", "Pédiatrie", "Chirurgie", "Urgence"],
+            "Statut": ["Public", "Privé", "Mixte"],
+            "Zone": ["Urbaine", "Rurale", "Périurbaine"],
+            "Accreditation": ["Oui", "Non", "En cours"],
+            "Equipement": ["Basique", "Intermédiaire", "Avancé"],
+            "Personnel": ["Insuffisant", "Adéquat", "Abondant"],
+            "Financement": ["Etat", "Privé", "International", "Mixte"]
         }
-        
-        category_keys = list(categories.keys())
-        
+
+        keys = list(predefined.keys())
+
         for i in range(n_vars):
-            if i < len(category_keys):
-                var_name = category_keys[i]
-                categories_list = categories[var_name]
+            if i < len(keys):
+                name = keys[i]
+                categories = predefined[name]
             else:
-                var_name = f"Cat_Var_{i+1}"
-                categories_list = [f'Cat_{j}' for j in range(random.randint(3, 8))]
-            
-            vars_dict[var_name] = np.random.choice(
-                categories_list, 
-                n_obs,
-                p=[1/len(categories_list)] * len(categories_list)
-            )
-        
+                name = f"Cat_Var_{i+1}"
+                categories = [f"Cat_{j}" for j in range(random.randint(3, 8))]
+
+            vars_dict[name] = np.random.choice(categories, n_obs)
+
         return vars_dict
-    
+
+    # -------------------------------------------------------------------
+
     def _generate_numerical_variables(self, n_vars, n_obs):
         """
         Génère des variables numériques réalistes
         """
-        vars_dict = {}
-        
-        # Distributions variées pour plus de réalisme
-        numerical_configs = [
-            {'name': 'Age_Patients', 'dist': 'normal', 'params': [45, 15], 'min': 18, 'max': 90},
-            {'name': 'Nombre_Lits', 'dist': 'poisson', 'params': [50], 'min': 10, 'max': 200},
-            {'name': 'Budget_Annuel', 'dist': 'lognormal', 'params': [12, 1.5], 'min': 50000, 'max': 5000000},
-            {'name': 'Personnel_Medical', 'dist': 'normal', 'params': [25, 10], 'min': 5, 'max': 100},
-            {'name': 'Patients_Jour', 'dist': 'poisson', 'params': [30], 'min': 5, 'max': 100},
-            {'name': 'Taux_Occupation', 'dist': 'beta', 'params': [2, 2], 'min': 0.3, 'max': 0.95},
-            {'name': 'Distance_Hopital', 'dist': 'exponential', 'params': [0.1], 'min': 0, 'max': 50},
-            {'name': 'Satisfaction_Patients', 'dist': 'normal', 'params': [7.5, 1.5], 'min': 1, 'max': 10},
-            {'name': 'Duree_Sejour', 'dist': 'gamma', 'params': [2, 2], 'min': 1, 'max': 30},
-            {'name': 'Cout_Operation', 'dist': 'lognormal', 'params': [8, 1], 'min': 100, 'max': 10000}
+        configs = [
+            {"name": "Age_Patients", "dist": "normal", "params": [45, 15], "min": 18, "max": 90},
+            {"name": "Nombre_Lits", "dist": "poisson", "params": [50], "min": 10, "max": 200},
+            {"name": "Budget_Annuel", "dist": "lognormal", "params": [12, 1.5], "min": 50000, "max": 5000000},
+            {"name": "Personnel_Medical", "dist": "normal", "params": [25, 10], "min": 5, "max": 100},
+            {"name": "Patients_Jour", "dist": "poisson", "params": [30], "min": 5, "max": 100},
+            {"name": "Taux_Occupation", "dist": "beta", "params": [2, 2], "min": 0.3, "max": 0.95},
+            {"name": "Distance_Hopital", "dist": "exponential", "params": [0.1], "min": 0, "max": 50},
+            {"name": "Satisfaction_Patients", "dist": "normal", "params": [7.5, 1.5], "min": 1, "max": 10},
+            {"name": "Duree_Sejour", "dist": "gamma", "params": [2, 2], "min": 1, "max": 30},
+            {"name": "Cout_Operation", "dist": "lognormal", "params": [8, 1], "min": 100, "max": 10000}
         ]
-        
+
+        vars_dict = {}
+
         for i in range(n_vars):
-            if i < len(numerical_configs):
-                config = numerical_configs[i]
-                var_name = config['name']
-                
-                if config['dist'] == 'normal':
-                    values = np.random.normal(config['params'][0], config['params'][1], n_obs)
-                elif config['dist'] == 'poisson':
-                    values = np.random.poisson(config['params'][0], n_obs)
-                elif config['dist'] == 'lognormal':
-                    values = np.random.lognormal(config['params'][0], config['params'][1], n_obs)
-                elif config['dist'] == 'beta':
-                    values = np.random.beta(config['params'][0], config['params'][1], n_obs)
-                elif config['dist'] == 'exponential':
-                    values = np.random.exponential(config['params'][0], n_obs)
-                elif config['dist'] == 'gamma':
-                    values = np.random.gamma(config['params'][0], config['params'][1], n_obs)
+            if i < len(configs):
+                c = configs[i]
+                name = c["name"]
+
+                if c["dist"] == "normal":
+                    v = np.random.normal(*c["params"], n_obs)
+                elif c["dist"] == "poisson":
+                    v = np.random.poisson(c["params"][0], n_obs)
+                elif c["dist"] == "lognormal":
+                    v = np.random.lognormal(*c["params"], n_obs)
+                elif c["dist"] == "beta":
+                    v = np.random.beta(*c["params"], n_obs)
+                elif c["dist"] == "exponential":
+                    v = np.random.exponential(c["params"][0], n_obs)
+                elif c["dist"] == "gamma":
+                    v = np.random.gamma(*c["params"], n_obs)
                 else:
-                    values = np.random.normal(0, 1, n_obs)
-                
-                # Appliquer les limites
-                values = np.clip(values, config['min'], config['max'])
-                
+                    v = np.random.normal(0, 1, n_obs)
+
+                v = np.clip(v, c["min"], c["max"])
+
             else:
-                var_name = f"Num_Var_{i+1}"
-                values = np.random.normal(0, 1, n_obs)
-                values = np.round(values, 2)
-            
-            vars_dict[var_name] = values
-        
+                name = f"Num_Var_{i+1}"
+                v = np.random.normal(0, 1, n_obs)
+                v = np.round(v, 2)
+
+            vars_dict[name] = v
+
         return vars_dict
-    
+
+    # -------------------------------------------------------------------
+
     def _generate_binary_variables(self, n_vars, n_obs):
         """
         Génère des variables binaires
         """
-        vars_dict = {}
-        
-        binary_configs = [
-            {'name': 'Urgence_Disponible', 'p': 0.7},
-            {'name': 'Laboratoire_Interne', 'p': 0.6},
-            {'name': 'Radiologie', 'p': 0.5},
-            {'name': 'Pharmacy', 'p': 0.8},
-            {'name': 'Ambulance', 'p': 0.4},
-            {'name': 'Bloc_Operatoire', 'p': 0.3},
-            {'name': 'Soins_Intensifs', 'p': 0.2}
+        configs = [
+            {"name": "Urgence_Disponible", "p": 0.7},
+            {"name": "Laboratoire_Interne", "p": 0.6},
+            {"name": "Radiologie", "p": 0.5},
+            {"name": "Pharmacy", "p": 0.8},
+            {"name": "Ambulance", "p": 0.4},
+            {"name": "Bloc_Operatoire", "p": 0.3},
+            {"name": "Soins_Intensifs", "p": 0.2}
         ]
-        
+
+        vars_dict = {}
+
         for i in range(n_vars):
-            if i < len(binary_configs):
-                config = binary_configs[i]
-                var_name = config['name']
-                p = config['p']
+            if i < len(configs):
+                name = configs[i]["name"]
+                p = configs[i]["p"]
             else:
-                var_name = f"Bin_Var_{i+1}"
+                name = f"Bin_Var_{i+1}"
                 p = random.uniform(0.2, 0.8)
-            
-            vars_dict[var_name] = np.random.choice([0, 1], n_obs, p=[1-p, p])
-        
+
+            vars_dict[name] = np.random.choice([0, 1], n_obs, p=[1 - p, p])
+
         return vars_dict
-    
+
+    # -------------------------------------------------------------------
+
     def _generate_target_variable(self, data, n_obs):
         """
         Génère une variable cible corrélée avec d'autres variables
@@ -187,7 +194,9 @@ class DataGenerator:
         categories = ['Faible', 'Moyen', 'Élevé', 'Très élevé']
         
         return [categories[min(i, 3)] for i in target_cat]
-    
+
+    # -------------------------------------------------------------------
+
     def _add_missing_values(self, df, percentage):
         """
         Ajoute des valeurs manquantes aléatoires
@@ -202,132 +211,128 @@ class DataGenerator:
         
         return df_with_na
 
-    # =========================================================================
-    # NOUVELLES FONCTIONS POUR LES TABLEAUX DE CONTINGENCE CORRIGÉS
-    # =========================================================================
-    
-    def generer_tableau_contingence_corrige(self, df, variable_ligne, variable_colonne, pourcentage_type='total'):
+    # ==================================================================
+    #  TABLEAUX DE CONTINGENCE — VERSION PROPRE ET CORRIGÉE
+    # ==================================================================
+
+    def generer_tableau_contingence_corrige(self, df, variable_ligne, variable_colonne, pourcentage_type="total"):
         """
-        Génère un tableau de contingence avec les formules statistiques CORRECTES
-        
-        Formules utilisées :
-        - n.. : effectif total
-        - nij : effectif de la cellule (i,j)
-        - ni. : effectif total de la ligne i  
-        - n.j : effectif total de la colonne j
-        
-        Types de pourcentages :
-        - 'total'    : pij = nij / n.. × 100  (fréquences conjointes)
-        - 'ligne'    : pij = nij / ni. × 100  (profil ligne)
-                      fi. = ni. / n.. × 100  (totaux ligne)
-                      f.j = n.j / n.. × 100  (totaux colonne)
-        - 'colonne'  : pij = nij / n.j × 100  (profil colonne)
-                      fi. = ni. / n.. × 100  (totaux ligne)
-                      f.j = n.j / n.. × 100  (totaux colonne)
-        """
-        # Créer le tableau de contingence avec les effectifs
-        tableau_effectifs = pd.crosstab(
-            df[variable_ligne], 
-            df[variable_colonne],
-            margins=True,
-            margins_name='Total'
-        )
-        
-        # Calculer n.. (effectif total)
-        n_total = tableau_effectifs.loc['Total', 'Total']
-        
-        # Initialiser le tableau des pourcentages
-        tableau_pourcentages = tableau_effectifs.copy().astype(float)
-        
-        if pourcentage_type == 'total':
-            # POURCENTAGES TOTAUX: pij = nij / n.. × 100 pour TOUTES les cellules
-            tableau_pourcentages = (tableau_effectifs / n_total * 100).round(1)
+        Génère un tableau de contingence avec :
+            nij    = effectifs
+            ni.    = totaux ligne
+            n.j    = totaux colonne
+            n..    = total général
+            + pourcentages correctement calculés
             
-        elif pourcentage_type == 'ligne':
-            # POURCENTAGES LIGNE: 
-            # Cellules internes: pij = nij / ni. × 100
-            # Totaux ligne: fi. = ni. / n.. × 100  
-            # Totaux colonne: f.j = n.j / n.. × 100
-            for i, idx in enumerate(tableau_effectifs.index):
-                for j, col in enumerate(tableau_effectifs.columns):
-                    nij = tableau_effectifs.iloc[i, j]
-                    
-                    if idx == 'Total' and col == 'Total':
-                        # Coin inférieur droit: 100%
-                        tableau_pourcentages.iloc[i, j] = 100.0
-                    elif idx == 'Total':
-                        # Totaux colonne: f.j = n.j / n.. × 100
-                        n_j = tableau_effectifs.loc['Total', col]
-                        tableau_pourcentages.iloc[i, j] = (n_j / n_total * 100).round(1)
-                    elif col == 'Total':
-                        # Totaux ligne: fi. = ni. / n.. × 100
-                        n_i = tableau_effectifs.loc[idx, 'Total']
-                        tableau_pourcentages.iloc[i, j] = (n_i / n_total * 100).round(1)
-                    else:
-                        # Cellules internes: pij = nij / ni. × 100
-                        n_i = tableau_effectifs.loc[idx, 'Total']
-                        if n_i > 0:
-                            tableau_pourcentages.iloc[i, j] = (nij / n_i * 100).round(1)
+        Formules garanties :
+        - Pourcentages totaux : pij = nij / n.. × 100
+        - Pourcentages ligne : pij = nij / ni. × 100 (cellules), fi. = ni. / n.. × 100 (totaux ligne), f.j = n.j / n.. × 100 (totaux colonne)
+        - Pourcentages colonne : pij = nij / n.j × 100 (cellules), fi. = ni. / n.. × 100 (totaux ligne), f.j = n.j / n.. × 100 (totaux colonne)
+        """
+
+        # Tableau brut avec marges
+        tab = pd.crosstab(df[variable_ligne], df[variable_colonne], margins=True, margins_name="Total")
+
+        # Récupérer les totaux
+        n_total = tab.loc["Total", "Total"]  # n..
+        ni = tab["Total"]  # totaux ligne (ni.)
+        nj = tab.loc["Total"]  # totaux colonne (n.j)
+
+        # Tableau de pourcentages
+        pct = pd.DataFrame(index=tab.index, columns=tab.columns, dtype=float)
+
+        if pourcentage_type == "total":
+            # POURCENTAGES TOTAUX : pij = nij / n.. × 100
+            pct = (tab / n_total * 100).round(1)
+
+        elif pourcentage_type == "ligne":
+            # POURCENTAGES LIGNE : 
+            # Cellules : pij = nij / ni. × 100
+            # Totaux ligne : fi. = ni. / n.. × 100
+            # Totaux colonne : f.j = n.j / n.. × 100
+            
+            # Calcul des cellules internes
+            for idx in tab.index:
+                for col in tab.columns:
+                    if idx != "Total" and col != "Total":
+                        nij = tab.loc[idx, col]
+                        ni_val = ni.loc[idx]
+                        if ni_val > 0:
+                            pct.loc[idx, col] = (nij / ni_val * 100).round(1)
                         else:
-                            tableau_pourcentages.iloc[i, j] = 0.0
-                            
-        elif pourcentage_type == 'colonne':
-            # POURCENTAGES COLONNE:
-            # Cellules internes: pij = nij / n.j × 100
-            # Totaux ligne: fi. = ni. / n.. × 100
-            # Totaux colonne: f.j = n.j / n.. × 100
-            for i, idx in enumerate(tableau_effectifs.index):
-                for j, col in enumerate(tableau_effectifs.columns):
-                    nij = tableau_effectifs.iloc[i, j]
-                    
-                    if idx == 'Total' and col == 'Total':
-                        # Coin inférieur droit: 100%
-                        tableau_pourcentages.iloc[i, j] = 100.0
-                    elif idx == 'Total':
-                        # Totaux colonne: f.j = n.j / n.. × 100
-                        n_j = tableau_effectifs.loc['Total', col]
-                        tableau_pourcentages.iloc[i, j] = (n_j / n_total * 100).round(1)
-                    elif col == 'Total':
-                        # Totaux ligne: fi. = ni. / n.. × 100
-                        n_i = tableau_effectifs.loc[idx, 'Total']
-                        tableau_pourcentages.iloc[i, j] = (n_i / n_total * 100).round(1)
-                    else:
-                        # Cellules internes: pij = nij / n.j × 100
-                        n_j = tableau_effectifs.loc['Total', col]
-                        if n_j > 0:
-                            tableau_pourcentages.iloc[i, j] = (nij / n_j * 100).round(1)
+                            pct.loc[idx, col] = 0.0
+            
+            # Totaux ligne
+            for idx in tab.index:
+                if idx != "Total":
+                    pct.loc[idx, "Total"] = (ni.loc[idx] / n_total * 100).round(1)
+            
+            # Totaux colonne  
+            for col in tab.columns:
+                if col != "Total":
+                    pct.loc["Total", col] = (nj.loc[col] / n_total * 100).round(1)
+            
+            # Coin inférieur droit
+            pct.loc["Total", "Total"] = 100.0
+
+        elif pourcentage_type == "colonne":
+            # POURCENTAGES COLONNE :
+            # Cellules : pij = nij / n.j × 100
+            # Totaux ligne : fi. = ni. / n.. × 100
+            # Totaux colonne : f.j = n.j / n.. × 100
+            
+            # Calcul des cellules internes
+            for idx in tab.index:
+                for col in tab.columns:
+                    if idx != "Total" and col != "Total":
+                        nij = tab.loc[idx, col]
+                        nj_val = nj.loc[col]
+                        if nj_val > 0:
+                            pct.loc[idx, col] = (nij / nj_val * 100).round(1)
                         else:
-                            tableau_pourcentages.iloc[i, j] = 0.0
-        
-        # Combiner effectifs et pourcentages
-        tableau_final = tableau_effectifs.copy().astype(object)
-        
-        for i in range(tableau_effectifs.shape[0]):
-            for j in range(tableau_effectifs.shape[1]):
-                effectif = tableau_effectifs.iloc[i, j]
-                pourcentage = tableau_pourcentages.iloc[i, j]
-                
-                if pd.notna(effectif) and pd.notna(pourcentage):
-                    tableau_final.iloc[i, j] = f"{effectif} ({pourcentage}%)"
-                else:
-                    tableau_final.iloc[i, j] = "0 (0.0%)"
-        
-        return tableau_final
+                            pct.loc[idx, col] = 0.0
+            
+            # Totaux ligne
+            for idx in tab.index:
+                if idx != "Total":
+                    pct.loc[idx, "Total"] = (ni.loc[idx] / n_total * 100).round(1)
+            
+            # Totaux colonne
+            for col in tab.columns:
+                if col != "Total":
+                    pct.loc["Total", col] = (nj.loc[col] / n_total * 100).round(1)
+            
+            # Coin inférieur droit
+            pct.loc["Total", "Total"] = 100.0
+
+        # Fusion effectif + pourcentage
+        final = tab.copy().astype(object)
+        for i in tab.index:
+            for j in tab.columns:
+                n = int(tab.loc[i, j])
+                p = pct.loc[i, j]
+                final.loc[i, j] = f"{n} ({p}%)"
+
+        return final
+
+    # ==================================================================
+    # FORMULES STATISTIQUES
+    # ==================================================================
 
     def afficher_formules_statistiques(self):
         """
-        Affiche les formules statistiques utilisées pour plus de transparence
+        Retourne les formules statistiques utilisées pour la transparence
         """
-        formules = """
-        📊 **FORMULES STATISTIQUES DES TABLEAUX DE CONTINGENCE**
+        return """
+        📊 **FORMULES STATISTIQUES UTILISÉES**
 
-        **Notations:**
-        - n.. : Effectif total de la population
-        - nij : Effectif de la cellule (ligne i, colonne j)  
-        - ni. : Effectif total de la ligne i
-        - n.j : Effectif total de la colonne j
+        Notations :
+        - n.. = effectif total
+        - nij = effectif cellule i,j
+        - ni. = total ligne i
+        - n.j = total colonne j
 
-        **Types de pourcentages disponibles:**
+        **Pourcentages disponibles :**
 
         🟦 **POURCENTAGES TOTAUX (fréquences conjointes)**
         • Formule: pij = nij / n.. × 100
@@ -345,90 +350,84 @@ class DataGenerator:
         • Totaux colonne: f.j = n.j / n.. × 100
         • Interprétation: Pourcentage par rapport au total de la colonne
 
-        ✅ **GARANTIE:** Tous les calculs respectent ces formules statistiques
+        ✅ **GARANTIE :** Tous les calculs respectent rigoureusement ces formules statistiques
+        Les pourcentages partiels (fi. et f.j) sont TOUJOURS calculés par rapport au total général n..
         """
-        return formules
 
-# Fonction utilitaire pour Streamlit
+
+# ======================================================================
+# INTERFACE STREAMLIT OPTIONNELLE
+# ======================================================================
+
 def creer_interface_tableaux_contingence(df):
     """
-    Crée une interface Streamlit pour les tableaux de contingence
+    Crée une interface Streamlit pour les tableaux de contingence corrigés
     """
     import streamlit as st
     import io
-    
-    st.header("📊 Tableaux de Contingence - Version Corrigée")
-    
-    # Afficher les formules
-    with st.expander("📖 Voir les formules statistiques utilisées"):
-        generateur = DataGenerator()
-        st.markdown(generateur.afficher_formules_statistiques())
-    
-    # Sélection des variables
+
+    st.header("📊 Tableaux de Contingence — Version Corrigée")
+
+    gen = DataGenerator()
+
+    with st.expander("📘 Formules statistiques utilisées"):
+        st.markdown(gen.afficher_formules_statistiques())
+
     col1, col2 = st.columns(2)
-    
     with col1:
-        variable_ligne = st.selectbox(
-            "Variable pour les lignes:",
-            options=df.columns,
-            index=0
-        )
-    
+        variable_ligne = st.selectbox("Variable pour les lignes :", df.columns, key="var_ligne")
     with col2:
-        variable_colonne = st.selectbox(
-            "Variable pour les colonnes:",
-            options=df.columns, 
-            index=1 if len(df.columns) > 1 else 0
-        )
-    
-    # Type de pourcentage
-    type_pourcentage = st.radio(
-        "Type de pourcentage:",
-        options=['total', 'ligne', 'colonne'],
+        variable_colonne = st.selectbox("Variable pour les colonnes :", df.columns, key="var_colonne")
+
+    type_pct = st.radio(
+        "Type de pourcentage :",
+        ["total", "ligne", "colonne"],
         format_func=lambda x: {
-            'total': '🟦 Pourcentages totaux (pij = nij/n.. × 100)',
-            'ligne': '🟩 Pourcentages ligne (pij = nij/ni. × 100)',
-            'colonne': '🟨 Pourcentages colonne (pij = nij/n.j × 100)'
+            "total": "🟦 Pourcentages totaux (pij = nij/n.. × 100)",
+            "ligne": "🟩 Pourcentages ligne (pij = nij/ni. × 100)", 
+            "colonne": "🟨 Pourcentages colonne (pij = nij/n.j × 100)"
         }[x],
         horizontal=True
     )
-    
-    # Génération du tableau
+
     if st.button("🔄 Générer le tableau corrigé", type="primary"):
-        generateur = DataGenerator()
-        
         with st.spinner("Calcul en cours..."):
-            tableau = generateur.generer_tableau_contingence_corrige(
-                df, variable_ligne, variable_colonne, type_pourcentage
-            )
+            tab = gen.generer_tableau_contingence_corrige(df, variable_ligne, variable_colonne, type_pct)
         
-        st.success("✅ Tableau généré avec les formules statistiques correctes!")
-        st.dataframe(tableau, use_container_width=True)
-        
+        st.success("✅ Tableau généré avec les formules statistiques correctes !")
+        st.dataframe(tab, use_container_width=True)
+
         # Téléchargement
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            tableau.to_excel(writer, sheet_name='Tableau_Contingence', index=True)
-        output.seek(0)
-        
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            tab.to_excel(writer, index=True)
+        buffer.seek(0)
+
         st.download_button(
-            label="📥 Télécharger le tableau Excel",
-            data=output,
+            "📥 Télécharger le tableau Excel",
+            data=buffer,
             file_name=f"tableau_contingence_{variable_ligne}_{variable_colonne}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# Exemple d'utilisation
+
+# ======================================================================
+# EXEMPLE D'UTILISATION
+# ======================================================================
+
 if __name__ == "__main__":
     # Test des fonctions
     generateur = DataGenerator()
-    df_test = generateur.generate_complex_dataset(100)
     
-    print("Test des tableaux de contingence corrigés:")
+    print("🧪 Génération d'un dataset de test...")
+    df_test = generateur.generate_complex_dataset(100)
+    print(f"Dataset généré : {df_test.shape}")
+    
+    print("\n📊 Test des tableaux de contingence corrigés :")
     tableau_test = generateur.generer_tableau_contingence_corrige(
         df_test, 'Type_Etablissement', 'Niveau_Complexite', 'ligne'
     )
     print(tableau_test)
     
-    print("\n" + "="*50)
+    print("\n" + "="*60)
     print(generateur.afficher_formules_statistiques())
