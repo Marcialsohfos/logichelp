@@ -24,10 +24,10 @@ try:
     from utils.data_generator import DataGenerator
 except ImportError:
     # Fallback si les modules ne sont pas disponibles
-    def generate_frequency_table(df, variable, group_variable, max_categories=15):
-        """Fallback function"""
+    def generate_conditional_table(df, row_variable, column_variable, percentage_type='col'):
+        """Fallback function pour tableaux conditionnels"""
         try:
-            cross_tab = pd.crosstab(df[variable], df[group_variable], margins=True)
+            cross_tab = pd.crosstab(df[row_variable], df[column_variable], margins=True)
             return cross_tab
         except:
             return pd.DataFrame({"Info": ["Analyse non disponible"]})
@@ -171,6 +171,27 @@ def load_css():
             border: 2px solid #667eea;
             margin: 1rem 0;
         }
+        .conditional-table {
+            font-family: Arial, sans-serif;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .conditional-table th {
+            background-color: #366092;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            border: 1px solid black;
+            padding: 8px;
+        }
+        .conditional-table td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: center;
+        }
+        .conditional-table tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -258,80 +279,131 @@ def show_welcome():
         </div>
         """, unsafe_allow_html=True)
 
-def generate_frequency_table(df, variable, group_variable, max_categories=15):
+def generate_conditional_table(df, row_variable, column_variable, percentage_type='col'):
     """
-    Version robuste de génération de tableaux de fréquences
-    Avec gestion améliorée des types de données
+    Génère un tableau conditionnel formaté avec effectifs et pourcentages CORRECTS
+    Format similaire à l'exemple fourni
     """
     try:
-        # Vérifications de base
-        if variable not in df.columns or group_variable not in df.columns:
-            return pd.DataFrame({"Erreur": ["Colonne manquante"]})
+        # Créer le tableau croisé de base sans marges d'abord
+        cross_tab = pd.crosstab(
+            df[row_variable], 
+            df[column_variable],
+            margins=False
+        )
         
-        # Nettoyer les données - conversion explicite en string
-        df_clean = df[[variable, group_variable]].dropna().copy()
-        df_clean[variable] = df_clean[variable].astype(str)
-        df_clean[group_variable] = df_clean[group_variable].astype(str)
+        # Calculer les totaux manuellement pour garantir l'exactitude
+        row_totals = cross_tab.sum(axis=1)
+        col_totals = cross_tab.sum(axis=0)
+        grand_total = cross_tab.sum().sum()
         
-        if df_clean.empty:
-            return pd.DataFrame({"Message": ["Aucune donnée après nettoyage"]})
+        # Ajouter les totaux manuellement
+        cross_tab_with_margins = cross_tab.copy()
+        cross_tab_with_margins['Total'] = row_totals
+        total_row = col_totals.copy()
+        total_row['Total'] = grand_total
+        cross_tab_with_margins.loc['Total'] = total_row
         
-        # Vérifier la variabilité
-        if df_clean[variable].nunique() <= 1 or df_clean[group_variable].nunique() <= 1:
-            return pd.DataFrame({"Message": ["Pas assez de variabilité dans les données"]})
-        
-        # Limiter les catégories si nécessaire
-        if df_clean[variable].nunique() > max_categories:
-            top_categories = df_clean[variable].value_counts().head(max_categories - 1).index
-            df_clean[variable] = df_clean[variable].apply(
-                lambda x: x if x in top_categories else 'Autres'
-            )
-        
-        # Créer le tableau croisé avec gestion d'erreur
-        try:
-            cross_tab = pd.crosstab(
-                df_clean[variable], 
-                df_clean[group_variable],
-                margins=True,
-                margins_name="Total"
-            )
-        except Exception as cross_error:
-            return pd.DataFrame({"Erreur": [f"Erreur création tableau: {str(cross_error)}"]})
-        
-        # Vérifier que le tableau n'est pas vide
-        if cross_tab.empty:
-            return pd.DataFrame({"Message": ["Tableau croisé vide"]})
-        
-        # Calculer les pourcentages de manière sécurisée
-        try:
-            # Utiliser sum() pour plus de sécurité
-            total_values = cross_tab.sum(axis=0)
-            percent_tab = (cross_tab / total_values) * 100
+        # Calculer les pourcentages CORRECTS
+        if percentage_type == 'col':
+            # Pourcentages par colonne
+            percent_data = []
+            for row_idx, row_name in enumerate(cross_tab_with_margins.index):
+                row_percents = []
+                for col_idx, col_name in enumerate(cross_tab_with_margins.columns):
+                    count = cross_tab_with_margins.iloc[row_idx, col_idx]
+                    if col_name == 'Total':
+                        # Pour la colonne Total, utiliser le total général comme dénominateur
+                        percent = (count / grand_total * 100) if grand_total > 0 else 0
+                    else:
+                        # Pour les autres colonnes, utiliser le total de la colonne
+                        col_total = cross_tab_with_margins.loc['Total', col_name]
+                        percent = (count / col_total * 100) if col_total > 0 else 0
+                    row_percents.append(percent)
+                percent_data.append(row_percents)
             
-            # Formater le résultat avec gestion des erreurs
-            result_data = {}
-            for col in cross_tab.columns:
-                result_data[col] = [
-                    f"{count} ({percent:.1f}%)" 
-                    for count, percent in zip(cross_tab[col], percent_tab[col])
-                ]
+            percent_df = pd.DataFrame(percent_data, 
+                                    index=cross_tab_with_margins.index,
+                                    columns=cross_tab_with_margins.columns)
+        
+        elif percentage_type == 'row':
+            # Pourcentages par ligne
+            percent_data = []
+            for row_idx, row_name in enumerate(cross_tab_with_margins.index):
+                row_percents = []
+                for col_idx, col_name in enumerate(cross_tab_with_margins.columns):
+                    count = cross_tab_with_margins.iloc[row_idx, col_idx]
+                    if row_name == 'Total':
+                        # Pour la ligne Total, utiliser le total général comme dénominateur
+                        percent = (count / grand_total * 100) if grand_total > 0 else 0
+                    else:
+                        # Pour les autres lignes, utiliser le total de la ligne
+                        row_total = cross_tab_with_margins.loc[row_name, 'Total']
+                        percent = (count / row_total * 100) if row_total > 0 else 0
+                    row_percents.append(percent)
+                percent_data.append(row_percents)
             
-            result_df = pd.DataFrame(result_data, index=cross_tab.index.astype(str))
-            return result_df
-            
-        except Exception as calc_error:
-            # Fallback: seulement les effectifs avec index string
-            cross_tab.index = cross_tab.index.astype(str)
-            return cross_tab
-            
+            percent_df = pd.DataFrame(percent_data,
+                                    index=cross_tab_with_margins.index,
+                                    columns=cross_tab_with_margins.columns)
+        
+        else:  # 'all' - pourcentages du total général
+            percent_df = cross_tab_with_margins / grand_total * 100
+        
+        # Arrondir les pourcentages
+        percent_df = percent_df.round(2)
+        
+        # Créer le tableau combiné final
+        combined_data = []
+        for row_idx, row_name in enumerate(cross_tab_with_margins.index):
+            row_data = []
+            for col_idx, col_name in enumerate(cross_tab_with_margins.columns):
+                count = cross_tab_with_margins.iloc[row_idx, col_idx]
+                percent = percent_df.iloc[row_idx, col_idx]
+                row_data.extend([count, percent])
+            combined_data.append(row_data)
+        
+        # Créer les noms de colonnes
+        column_names = []
+        for col_name in cross_tab_with_margins.columns:
+            column_names.extend([col_name, '%'])
+        
+        # Créer le DataFrame final
+        result_df = pd.DataFrame(
+            combined_data,
+            index=cross_tab_with_margins.index,
+            columns=column_names
+        )
+        
+        return result_df
+        
     except Exception as e:
-        error_msg = f"Erreur avec {variable}: {str(e)}"
+        error_msg = f"Erreur avec {row_variable}: {str(e)}"
         return pd.DataFrame({"Erreur": [error_msg]})
+
+def format_conditional_table_display(conditional_df, title=""):
+    """
+    Formate l'affichage d'un tableau conditionnel avec style HTML
+    """
+    if conditional_df.empty or 'Erreur' in conditional_df.columns:
+        return conditional_df
+    
+    # Convertir le DataFrame en HTML avec style
+    html_table = conditional_df.to_html(classes='conditional-table', escape=False)
+    
+    # Ajouter le titre
+    full_html = f"""
+    <div style="margin: 20px 0;">
+        <h4 style="text-align: center; color: #366092; margin-bottom: 10px;">{title}</h4>
+        {html_table}
+    </div>
+    """
+    
+    return full_html
 
 def download_all_tables_excel(all_tables_data, var_interet):
     """
-    Télécharge tous les tableaux de répartition dans un seul fichier Excel
-    Version corrigée des erreurs de caractères et de conversion
+    Télécharge tous les tableaux conditionnels dans un seul fichier Excel
     """
     try:
         # Créer un fichier Excel en mémoire
@@ -350,7 +422,7 @@ def download_all_tables_excel(all_tables_data, var_interet):
                 # Nettoyer le nom de la feuille pour Excel
                 sheet_name = clean_sheet_name(variable_name)
                 
-                # S'assurer que l'index est de type string pour éviter les erreurs de conversion
+                # S'assurer que l'index est de type string
                 table_display = table.copy()
                 table_display.index = table_display.index.astype(str)
                 table_display.columns = table_display.columns.astype(str)
@@ -387,27 +459,6 @@ def download_all_tables_excel(all_tables_data, var_interet):
             }
             metadata_df = pd.DataFrame(metadata_data)
             metadata_df.to_excel(writer, sheet_name='METADONNEES', index=False)
-            
-            # Feuille avec les instructions
-            instructions_data = {
-                'Section': [
-                    'SOMMAIRE',
-                    'METADONNEES',
-                    'Feuilles des Variables'
-                ],
-                'Description': [
-                    'Vue d\'ensemble de toutes les variables analysées',
-                    'Informations techniques sur le fichier',
-                    'Une feuille par variable avec les répartitions détaillées'
-                ],
-                'Utilisation': [
-                    'Identifier rapidement les variables disponibles',
-                    'Comprendre le contexte de l\'analyse',
-                    'Analyser les répartitions détaillées par variable'
-                ]
-            }
-            instructions_df = pd.DataFrame(instructions_data)
-            instructions_df.to_excel(writer, sheet_name='INSTRUCTIONS', index=False)
         
         output.seek(0)
         
@@ -426,8 +477,6 @@ def download_all_tables_excel(all_tables_data, var_interet):
         
     except Exception as e:
         st.error(f"❌ Erreur lors de la génération du fichier Excel: {str(e)}")
-        # Log détaillé pour le débogage
-        st.error(f"Détails de l'erreur: {type(e).__name__}")
 
 def telecharger_donnees():
     st.markdown('<h2 class="section-header">📥 Télécharger des Données d\'Exemple</h2>', unsafe_allow_html=True)
@@ -543,11 +592,18 @@ def repartition_variables():
         return
     
     # Options d'affichage
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         max_categories = st.number_input("Max catégories par variable", min_value=5, max_value=50, value=15)
     with col2:
         min_unique_values = st.number_input("Valeurs uniques minimum", min_value=1, max_value=10, value=2)
+    with col3:
+        percentage_type = st.selectbox(
+            "Type de pourcentage:",
+            options=['col', 'row', 'all'],
+            format_func=lambda x: {'col': 'Par colonne', 'row': 'Par ligne', 'all': 'Total'}[x],
+            help="Définit comment sont calculés les pourcentages"
+        )
     
     # Filtrer les variables valides
     valid_variables = []
@@ -581,7 +637,7 @@ def repartition_variables():
     
     st.info(f"🔍 Analyse de {len(valid_variables)} variables sur {len(df.columns) - 1} totales")
     
-    # Génération des tableaux
+    # Génération des tableaux conditionnels
     progress_bar = st.progress(0)
     successful_tables = 0
     all_tables_data = {}  # Stocker tous les tableaux pour l'export Excel
@@ -589,7 +645,7 @@ def repartition_variables():
     for i, variable in enumerate(valid_variables):
         try:
             with st.spinner(f"Analyse de {variable}..."):
-                table = generate_frequency_table(df, variable, var_interet, max_categories)
+                table = generate_conditional_table(df, variable, var_interet, percentage_type)
                 
                 if table is not None and not table.empty:
                     if 'Erreur' not in table.columns and 'Message' not in table.columns:
@@ -598,7 +654,12 @@ def repartition_variables():
                         all_tables_data[variable] = table
                         
                         with st.expander(f"📋 {variable} ({df[variable].nunique()} catégories)", expanded=False):
-                            st.dataframe(table, width='stretch')
+                            # Afficher le tableau formaté avec style
+                            html_table = format_conditional_table_display(
+                                table, 
+                                f"Répartition de {variable} par {var_interet}"
+                            )
+                            st.markdown(html_table, unsafe_allow_html=True)
                             
                             # Téléchargement individuel
                             try:
@@ -624,7 +685,7 @@ def repartition_variables():
         
         progress_bar.progress((i + 1) / len(valid_variables))
     
-    # SECTION TÉLÉCHARGEMENT GLOBAL - NOUVELLE FONCTIONNALITÉ
+    # SECTION TÉLÉCHARGEMENT GLOBAL
     if successful_tables > 0:
         st.success(f"✅ {successful_tables}/{len(valid_variables)} tableaux générés avec succès")
         
@@ -647,7 +708,6 @@ def repartition_variables():
             • Une feuille par variable avec son tableau complet
             • Un sommaire avec toutes les statistiques
             • Des métadonnées techniques
-            • Un guide d'utilisation
             """)
         
         with col2:
@@ -662,7 +722,7 @@ def repartition_variables():
         with col2:
             st.metric("Variables analysées", successful_tables)
         with col3:
-            st.metric("Feuilles totales", len(all_tables_data) + 3)  # +3 pour sommaire, métadonnées, instructions
+            st.metric("Feuilles totales", len(all_tables_data) + 2)  # +2 pour sommaire et métadonnées
         
     else:
         st.warning("⚠️ Aucun tableau n'a pu être généré. Vérifiez vos données.")
@@ -765,7 +825,7 @@ def tests_statistiques():
         elif var1_type == 'catégorielle' and var2_type == 'numérique':
             st.info("🔍 Test recommandé: ANOVA ou Test-t")
             test_anova_ttest(df, test_var1, test_var2)
-        elif var1_type == 'numérique' and var2_type == 'numérique':
+        elif var1_type == 'numérique' et var2_type == 'numérique':
             st.info("🔍 Test recommandé: Corrélation")
             test_correlation(df, test_var1, test_var2)
         else:
