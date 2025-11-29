@@ -14,8 +14,8 @@ class AnalysisFunctions:
     
     def generate_frequency_table(self, df, variable, group_variable, max_categories=15, mode="colonne"):
         """
-        Génère un tableau de fréquences étendu selon le format demandé
-        Utilise la nouvelle fonction generer_tableau_contingence_etendu
+        Génère un tableau de fréquences avec le FORMAT EXACT DEMANDÉ
+        Colonnes séparées pour effectifs et pourcentages
         """
         # Vérification des colonnes
         if variable not in df.columns or group_variable not in df.columns:
@@ -24,12 +24,12 @@ class AnalysisFunctions:
         # Gérer les variables avec trop de catégories
         df_temp = self._gerer_categories_nombreuses(df, variable, max_categories)
         
-        # Générer le tableau étendu
-        tableau_etendu = self.data_gen.generer_tableau_contingence_etendu(
+        # Générer le tableau avec le format demandé
+        tableau = self.data_gen.generer_tableau_contingence_format_demande(
             df_temp, variable, group_variable, mode
         )
         
-        return tableau_etendu
+        return tableau
 
     def _gerer_categories_nombreuses(self, df, variable, max_categories):
         """Gère les variables avec trop de catégories"""
@@ -43,87 +43,58 @@ class AnalysisFunctions:
             return df_temp
         return df.copy()
 
-    def generate_frequency_table_classique(self, df, variable, group_variable, max_categories=15, mode="total"):
+    def analyser_dataset_complet_par_niveau(self, df, colonne_niveau='Niveau_Complexite'):
         """
-        Version classique maintenue pour la compatibilité
+        Analyse complète du dataset par niveau de complexité
+        Inspiré de votre script d'exemple
         """
-        # Vérification des colonnes
-        if variable not in df.columns or group_variable not in df.columns:
-            raise ValueError(f"Variables non trouvées: {variable} ou {group_variable}")
-
-        # Gérer les variables avec trop de catégories
-        if df[variable].nunique() > max_categories:
-            value_counts = df[variable].value_counts()
-            top_categories = value_counts.head(max_categories - 1).index
-            df_temp = df.copy()
-            df_temp[variable] = df_temp[variable].apply(
-                lambda x: x if x in top_categories else 'Autres'
-            )
-        else:
-            df_temp = df
-
-        # Utiliser la fonction classique pour la cohérence
-        try:
-            return self.data_gen.generer_tableau_contingence_corrige(df_temp, variable, group_variable, mode)
-        except:
-            # Fallback si la fonction n'est pas disponible
-            return self._generate_frequency_table_fallback(df_temp, variable, group_variable, mode)
-
-    def _generate_frequency_table_fallback(self, df, var_ligne, var_col, mode="total"):
-        """
-        Version de fallback pour generer_tableau_contingence_corrige
-        """
-        # Tableau d'effectifs avec marges
-        effectifs = pd.crosstab(
-            df[var_ligne], 
-            df[var_col], 
-            margins=True, 
-            margins_name="Total"
-        )
+        print("🔍 Début de l'analyse complète par niveau de complexité...")
         
-        n_total = effectifs.loc["Total", "Total"]
-        pourcent = effectifs.copy().astype(float)
-
-        for i in effectifs.index:
-            for j in effectifs.columns:
-                nij = effectifs.loc[i, j]
-                
-                if mode == "total":
-                    pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
-                elif mode == "ligne":
-                    if i == "Total":
-                        pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
-                    else:
-                        denom = effectifs.loc[i, "Total"]
-                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
-                elif mode == "colonne":
-                    if j == "Total":
-                        pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
-                    else:
-                        denom = effectifs.loc["Total", j]
-                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
-
-        # Construction du tableau final
-        final = effectifs.copy().astype(object)
+        # Vérifier la colonne de niveau
+        if colonne_niveau not in df.columns:
+            raise ValueError(f"Colonne de niveau '{colonne_niveau}' non trouvée")
         
-        for i in effectifs.index:
-            for j in effectifs.columns:
-                e = effectifs.loc[i, j]
-                p = round(float(pourcent.loc[i, j]), 1)
+        # Nettoyer les données
+        df_clean = df.copy()
+        df_clean[colonne_niveau] = df_clean[colonne_niveau].astype(str).str.strip()
+        
+        # Garder seulement les niveaux valides
+        niveaux_valides = ['Level I', 'Level II', 'Level III', 'Level IV']
+        df_clean = df_clean[df_clean[colonne_niveau].isin(niveaux_valides)]
+        
+        print(f"📊 Dataset analysé : {len(df_clean)} observations")
+        print(f"📈 Répartition par niveau : {df_clean[colonne_niveau].value_counts().to_dict()}")
+        
+        # Analyser toutes les variables
+        resultats_complets = {}
+        variables_a_analyser = [col for col in df_clean.columns if col != colonne_niveau]
+        
+        for variable in variables_a_analyser:
+            try:
+                tableau = self.generate_frequency_table(df_clean, variable, colonne_niveau, mode="colonne")
+                resultats_complets[variable] = tableau
+            except Exception as e:
+                print(f"⚠️ Erreur avec {variable}: {e}")
+                continue
+        
+        return resultats_complets
 
-                if i != "Total" and j != "Total":
-                    final.loc[i, j] = f"{e} ({p}%)"
-                else:
-                    final.loc[i, j] = f"{e}"
-
-        return final
-
-    def afficher_tableau_contingence(self, tableau):
+    def exporter_analyse_complete(self, resultats, nom_fichier="analyse_complete.xlsx"):
         """
-        Affiche un tableau de contingence formaté
+        Exporte l'analyse complète vers Excel
         """
-        return self.data_gen.formater_tableau_affichage(tableau)
+        with pd.ExcelWriter(nom_fichier, engine='openpyxl') as writer:
+            for nom_variable, tableau in resultats.items():
+                # Nom de feuille limité à 31 caractères
+                nom_feuille = nom_variable[:31]
+                tableau.to_excel(writer, sheet_name=nom_feuille, index=False)
+        
+        print(f"💾 Analyse exportée : {nom_fichier}")
+        return nom_fichier
 
+    # ============================================================
+    # FONCTIONS D'ANALYSE STATISTIQUE (maintenues)
+    # ============================================================
     def test_chi2_carre(self, df, var1, var2):
         """
         Test du Chi-carré avec gestion d'erreurs améliorée
@@ -294,6 +265,51 @@ class AnalysisFunctions:
         except Exception as e:
             return {"error": f"Erreur dans le test de corrélation: {str(e)}"}
 
+    def calculate_descriptive_stats(self, df, variables=None):
+        """
+        Calcule les statistiques descriptives avec plus d'indicateurs
+        """
+        if variables is None:
+            variables = df.select_dtypes(include=[np.number, 'category', 'object']).columns
+        
+        stats_dict = {}
+        
+        for var in variables:
+            if np.issubdtype(df[var].dtype, np.number):
+                # Statistiques pour variables numériques
+                clean_data = df[var].dropna()
+                stats_dict[var] = {
+                    'type': 'Numérique',
+                    'count': len(clean_data),
+                    'missing': df[var].isna().sum(),
+                    'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
+                    'mean': round(clean_data.mean(), 2),
+                    'std': round(clean_data.std(), 2),
+                    'min': round(clean_data.min(), 2),
+                    '25%': round(clean_data.quantile(0.25), 2),
+                    'median': round(clean_data.median(), 2),
+                    '75%': round(clean_data.quantile(0.75), 2),
+                    'max': round(clean_data.max(), 2),
+                    'skewness': round(clean_data.skew(), 2),
+                    'kurtosis': round(clean_data.kurtosis(), 2)
+                }
+            else:
+                # Statistiques pour variables catégorielles
+                value_counts = df[var].value_counts()
+                stats_dict[var] = {
+                    'type': 'Catégorielle',
+                    'count': df[var].count(),
+                    'missing': df[var].isna().sum(),
+                    'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
+                    'unique': df[var].nunique(),
+                    'mode': value_counts.index[0] if len(value_counts) > 0 else None,
+                    'freq_mode': value_counts.iloc[0] if len(value_counts) > 0 else 0,
+                    'freq_mode_percent': round(100 * value_counts.iloc[0] / len(df[var].dropna()), 1) if len(value_counts) > 0 else 0,
+                    'categories': value_counts.to_dict()
+                }
+        
+        return stats_dict
+
     def create_visualization(self, df, viz_type, **kwargs):
         """
         Fonction unifiée pour créer des visualisations
@@ -359,117 +375,6 @@ class AnalysisFunctions:
         corr_matrix = df[numerical_vars].corr()
         fig = px.imshow(corr_matrix, title="Matrice de Corrélation", aspect="auto")
         return fig, corr_matrix
-
-    def calculate_descriptive_stats(self, df, variables=None):
-        """
-        Calcule les statistiques descriptives avec plus d'indicateurs
-        """
-        if variables is None:
-            variables = df.select_dtypes(include=[np.number, 'category', 'object']).columns
-        
-        stats_dict = {}
-        
-        for var in variables:
-            if np.issubdtype(df[var].dtype, np.number):
-                # Statistiques pour variables numériques
-                clean_data = df[var].dropna()
-                stats_dict[var] = {
-                    'type': 'Numérique',
-                    'count': len(clean_data),
-                    'missing': df[var].isna().sum(),
-                    'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
-                    'mean': round(clean_data.mean(), 2),
-                    'std': round(clean_data.std(), 2),
-                    'min': round(clean_data.min(), 2),
-                    '25%': round(clean_data.quantile(0.25), 2),
-                    'median': round(clean_data.median(), 2),
-                    '75%': round(clean_data.quantile(0.75), 2),
-                    'max': round(clean_data.max(), 2),
-                    'skewness': round(clean_data.skew(), 2),
-                    'kurtosis': round(clean_data.kurtosis(), 2)
-                }
-            else:
-                # Statistiques pour variables catégorielles
-                value_counts = df[var].value_counts()
-                stats_dict[var] = {
-                    'type': 'Catégorielle',
-                    'count': df[var].count(),
-                    'missing': df[var].isna().sum(),
-                    'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
-                    'unique': df[var].nunique(),
-                    'mode': value_counts.index[0] if len(value_counts) > 0 else None,
-                    'freq_mode': value_counts.iloc[0] if len(value_counts) > 0 else 0,
-                    'freq_mode_percent': round(100 * value_counts.iloc[0] / len(df[var].dropna()), 1) if len(value_counts) > 0 else 0,
-                    'categories': value_counts.to_dict()
-                }
-        
-        return stats_dict
-
-    def perform_comprehensive_analysis(self, df, target_var=None):
-        """
-        Effectue une analyse complète du dataset
-        """
-        analysis_results = {}
-        
-        # Statistiques descriptives
-        analysis_results['descriptive_stats'] = self.calculate_descriptive_stats(df)
-        
-        # Matrice de corrélation (si variables numériques)
-        numerical_vars = df.select_dtypes(include=[np.number]).columns
-        if len(numerical_vars) >= 2:
-            corr_result = self.create_correlation_matrix(df, numerical_vars)
-            if corr_result:
-                analysis_results['correlation_matrix'] = corr_result
-        
-        return analysis_results
-
-    def analyze_target_variable(self, df, target_var):
-        """
-        Analyse approfondie d'une variable cible
-        """
-        analysis = {}
-        
-        if np.issubdtype(df[target_var].dtype, np.number):
-            # Variable numérique
-            analysis['type'] = 'numerical'
-            analysis['distribution'] = {
-                'mean': df[target_var].mean(),
-                'median': df[target_var].median(),
-                'std': df[target_var].std(),
-                'skewness': df[target_var].skew()
-            }
-        else:
-            # Variable catégorielle
-            analysis['type'] = 'categorical'
-            value_counts = df[target_var].value_counts()
-            analysis['distribution'] = {
-                'categories': value_counts.to_dict(),
-                'proportions': (value_counts / len(df)).to_dict()
-            }
-        
-        return analysis
-
-# Fonctions utilitaires pour l'export
-def format_statistical_result(result):
-    """Formate les résultats statistiques pour l'affichage"""
-    if 'error' in result:
-        return f"❌ Erreur: {result['error']}"
-    
-    formatted = []
-    for key, value in result.items():
-        if key not in ['contingency_table', 'interpretation', 'warning']:
-            if isinstance(value, float):
-                formatted.append(f"{key}: {value:.4f}")
-            else:
-                formatted.append(f"{key}: {value}")
-    
-    if 'interpretation' in result:
-        formatted.append(f"📊 Interprétation: {result['interpretation']}")
-    
-    if 'warning' in result and result['warning']:
-        formatted.append(f"⚠️ Attention: {result['warning']}")
-    
-    return "\n".join(formatted)
 
 # Instance globale pour une utilisation facile
 analysis = AnalysisFunctions()
