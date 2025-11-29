@@ -825,7 +825,7 @@ def tests_statistiques():
         elif var1_type == 'catégorielle' and var2_type == 'numérique':
             st.info("🔍 Test recommandé: ANOVA ou Test-t")
             test_anova_ttest(df, test_var1, test_var2)
-        elif var1_type == 'numérique' et var2_type == 'numérique':
+        elif var1_type == 'numérique' and var2_type == 'numérique':  # CORRECTION: "et" -> "and"
             st.info("🔍 Test recommandé: Corrélation")
             test_correlation(df, test_var1, test_var2)
         else:
