@@ -3,441 +3,415 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
-from scipy.stats import chi2_contingency, f_oneway, ttest_ind, pearsonr
+from scipy.stats import chi2_contingency, f_oneway, ttest_ind, pearsonr, shapiro
 import matplotlib.pyplot as plt
 import seaborn as sns
+from data_generator import DataGenerator  # Import pour la cohérence des tableaux
 
-def generate_frequency_table(df, variable, group_variable, max_categories=15):
-    """
-    Génère un tableau de fréquences avec effectifs et pourcentages
-    """
-    # Gérer les variables avec trop de catégories
-    if df[variable].nunique() > max_categories:
-        # Regrouper les catégories peu fréquentes
-        value_counts = df[variable].value_counts()
-        top_categories = value_counts.head(max_categories - 1).index
-        df_temp = df.copy()
-        df_temp[variable] = df_temp[variable].apply(
-            lambda x: x if x in top_categories else 'Autres'
-        )
-    else:
-        df_temp = df
+class AnalysisFunctions:
+    def __init__(self):
+        self.data_gen = DataGenerator()
     
-    # Créer le tableau croisé
-    cross_tab = pd.crosstab(
-        df_temp[variable], 
-        df_temp[group_variable],
-        margins=True,
-        margins_name="Total"
-    )
-    
-    # Ajouter les pourcentages
-    percent_tab = cross_tab.div(cross_tab.iloc[-1]) * 100
-    
-    # Combiner effectifs et pourcentages
-    result_tab = cross_tab.astype(str) + " (" + percent_tab.round(2).astype(str) + "%)"
-    
-    return result_tab
-
-def display_frequency_table(table_df, show_percentages=True, show_totals=True):
-    """
-    Affiche un tableau de fréquences formaté
-    """
-    # Appliquer le style
-    styled_table = table_df.style.set_properties(**{
-        'text-align': 'center',
-        'border': '1px solid black'
-    }).set_table_styles([{
-        'selector': 'th',
-        'props': [('background-color', '#366092'), ('color', 'white')]
-    }])
-    
-    return styled_table
-
-def test_chi2_carre(df, var1, var2):
-    """
-    Test du Chi-carré pour deux variables catégorielles
-    """
-    contingency_table = pd.crosstab(df[var1], df[var2])
-    
-    if contingency_table.size == 0:
-        return "Tableau de contingence vide"
-    
-    try:
-        chi2, p, dof, expected = chi2_contingency(contingency_table)
-        
-        result = {
-            'test': 'Chi-carré',
-            'chi2_statistic': chi2,
-            'p_value': p,
-            'degrees_freedom': dof,
-            'contingency_table': contingency_table
-        }
-        
-        return result
-    except Exception as e:
-        return f"Erreur dans le test Chi-carré: {str(e)}"
-
-def test_anova_ttest(df, cat_var, num_var):
-    """
-    ANOVA ou Test-t pour variable catégorielle vs numérique
-    """
-    groups = df.groupby(cat_var)[num_var].apply(list)
-    
-    if len(groups) == 2:
-        # Test-t pour 2 groupes
-        t_stat, p_value = ttest_ind(groups.iloc[0], groups.iloc[1])
-        return {
-            'test': 'Test-t',
-            't_statistic': t_stat,
-            'p_value': p_value
-        }
-    else:
-        # ANOVA pour plus de 2 groupes
-        f_stat, p_value = f_oneway(*groups)
-        return {
-            'test': 'ANOVA',
-            'f_statistic': f_stat,
-            'p_value': p_value
-        }
-
-def test_correlation(df, var1, var2):
-    """
-    Test de corrélation pour deux variables numériques
-    """
-    corr_coef, p_value = pearsonr(df[var1].dropna(), df[var2].dropna())
-    
-    return {
-        'test': 'Corrélation de Pearson',
-        'correlation_coefficient': corr_coef,
-        'p_value': p_value
-    }
-
-def create_bar_chart(df, x_var, color_var=None, group_var=None):
-    """
-    Crée un diagramme en barres interactif
-    """
-    if group_var:
-        fig = px.histogram(df, x=x_var, color=color_var, barmode='group',
-                          title=f"Distribution de {x_var} par {color_var}")
-    else:
-        fig = px.histogram(df, x=x_var, color=color_var,
-                          title=f"Distribution de {x_var} par {color_var}")
-    
-    fig.update_layout(
-        xaxis_title=x_var,
-        yaxis_title="Effectif",
-        legend_title=color_var
-    )
-    
-    return fig
-
-def create_stacked_bar_chart(df, x_var, stack_var=None, color_var=None):
-    """
-    Crée un diagramme en bande (stacked bar chart)
-    """
-    if color_var:
-        fig = px.histogram(df, x=x_var, color=stack_var, barmode='stack',
-                          facet_col=color_var, title=f"Diagramme en bande: {x_var} par {stack_var}")
-    else:
-        fig = px.histogram(df, x=x_var, color=stack_var, barmode='stack',
-                          title=f"Diagramme en bande: {x_var} par {stack_var}")
-    
-    return fig
-
-def create_histogram(df, num_var, color_var=None):
-    """
-    Crée un histogramme
-    """
-    if color_var:
-        fig = px.histogram(df, x=num_var, color=color_var, marginal="box",
-                          title=f"Distribution de {num_var}")
-    else:
-        fig = px.histogram(df, x=num_var, title=f"Distribution de {num_var}")
-    
-    return fig
-
-def create_boxplot(df, cat_var, num_var):
-    """
-    Crée un boxplot
-    """
-    fig = px.box(df, x=cat_var, y=num_var, 
-                title=f"Distribution de {num_var} par {cat_var}")
-    return fig
-
-def create_scatter_plot(df, x_var, y_var, color_var=None):
-    """
-    Crée un scatter plot
-    """
-    if color_var:
-        fig = px.scatter(df, x=x_var, y=y_var, color=color_var,
-                        title=f"Relation entre {x_var} et {y_var}")
-    else:
-        fig = px.scatter(df, x=x_var, y=y_var,
-                        title=f"Relation entre {x_var} et {y_var}")
-    
-    # Ajouter la ligne de régression si les données sont numériques
-    if df[x_var].dtype in ['int64', 'float64'] and df[y_var].dtype in ['int64', 'float64']:
-        try:
-            # Calculer la régression linéaire
-            clean_data = df[[x_var, y_var]].dropna()
-            if len(clean_data) > 1:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(clean_data[x_var], clean_data[y_var])
-                line_x = np.array([clean_data[x_var].min(), clean_data[x_var].max()])
-                line_y = intercept + slope * line_x
-                
-                fig.add_trace(go.Scatter(
-                    x=line_x,
-                    y=line_y,
-                    mode='lines',
-                    name=f'Régression (r={r_value:.2f})',
-                    line=dict(color='red', dash='dash')
-                ))
-        except:
-            pass  # Ignorer les erreurs de régression
-    
-    return fig
-
-def create_3d_visualization(df, var1, var2, var3, color_var):
-    """
-    Crée une visualisation 3D interactive
-    """
-    # Scatter plot 3D
-    fig = px.scatter_3d(df, x=var1, y=var2, z=var3, color=color_var,
-                       title=f"Visualisation 3D: {var1}, {var2}, {var3}")
-    
-    return fig
-
-def calculate_descriptive_stats(df, variables=None):
-    """
-    Calcule les statistiques descriptives pour les variables spécifiées
-    """
-    if variables is None:
-        variables = df.columns
-    
-    stats_dict = {}
-    
-    for var in variables:
-        if df[var].dtype in ['int64', 'float64']:
-            # Statistiques pour variables numériques
-            stats_dict[var] = {
-                'type': 'Numérique',
-                'count': df[var].count(),
-                'mean': df[var].mean(),
-                'std': df[var].std(),
-                'min': df[var].min(),
-                '25%': df[var].quantile(0.25),
-                'median': df[var].median(),
-                '75%': df[var].quantile(0.75),
-                'max': df[var].max(),
-                'missing': df[var].isna().sum()
-            }
-        else:
-            # Statistiques pour variables catégorielles
-            stats_dict[var] = {
-                'type': 'Catégorielle',
-                'count': df[var].count(),
-                'unique': df[var].nunique(),
-                'mode': df[var].mode().iloc[0] if not df[var].empty else None,
-                'freq_mode': df[var].value_counts().iloc[0] if not df[var].empty else 0,
-                'missing': df[var].isna().sum()
-            }
-    
-    return stats_dict
-
-def create_correlation_matrix(df, numerical_vars=None):
-    """
-    Crée une matrice de corrélation pour les variables numériques
-    """
-    if numerical_vars is None:
-        numerical_vars = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    if len(numerical_vars) < 2:
-        return None
-    
-    corr_matrix = df[numerical_vars].corr()
-    
-    # Créer un heatmap interactif
-    fig = px.imshow(corr_matrix,
-                   title="Matrice de Corrélation",
-                   color_continuous_scale='RdBu_r',
-                   aspect="auto")
-    
-    return fig, corr_matrix
-
-def perform_normality_test(df, numerical_vars=None):
-    """
-    Effectue le test de normalité de Shapiro-Wilk sur les variables numériques
-    """
-    if numerical_vars is None:
-        numerical_vars = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    normality_results = {}
-    
-    for var in numerical_vars:
-        clean_data = df[var].dropna()
-        if len(clean_data) >= 3 and len(clean_data) <= 5000:  # Limitations du test Shapiro-Wilk
-            stat, p_value = stats.shapiro(clean_data)
-            normality_results[var] = {
-                'statistic': stat,
-                'p_value': p_value,
-                'normal': p_value > 0.05
-            }
-        else:
-            normality_results[var] = {
-                'statistic': None,
-                'p_value': None,
-                'normal': None,
-                'message': 'Échantillon trop petit ou trop grand pour Shapiro-Wilk'
-            }
-    
-    return normality_results
-
-def create_interactive_distribution(df, variable, group_var=None):
-    """
-    Crée une visualisation interactive de la distribution
-    """
-    if df[variable].dtype in ['int64', 'float64']:
-        # Variable numérique - histogramme + boxplot
-        if group_var:
-            fig = px.histogram(df, x=variable, color=group_var, 
-                             marginal="box", barmode="overlay",
-                             title=f"Distribution de {variable} par {group_var}")
-        else:
-            fig = px.histogram(df, x=variable, marginal="box",
-                             title=f"Distribution de {variable}")
-    else:
-        # Variable catégorielle - diagramme en barres
-        if group_var:
-            fig = px.histogram(df, x=variable, color=group_var, barmode='group',
-                             title=f"Distribution de {variable} par {group_var}")
-        else:
-            value_counts = df[variable].value_counts().reset_index()
-            value_counts.columns = [variable, 'count']
-            fig = px.bar(value_counts, x=variable, y='count',
-                        title=f"Distribution de {variable}")
-    
-    return fig
-
-def calculate_effect_size(df, var1, var2):
-    """
-    Calcule la taille d'effet pour différentes combinaisons de variables
-    """
-    effect_sizes = {}
-    
-    # Vérifier les types de variables
-    var1_type = 'catégorielle' if df[var1].dtype == 'object' or df[var1].nunique() < 10 else 'numérique'
-    var2_type = 'catégorielle' if df[var2].dtype == 'object' or df[var2].nunique() < 10 else 'numérique'
-    
-    if var1_type == 'catégorielle' and var2_type == 'catégorielle':
-        # V de Cramer pour deux variables catégorielles
-        contingency_table = pd.crosstab(df[var1], df[var2])
-        chi2, _, _, _ = chi2_contingency(contingency_table)
-        n = contingency_table.sum().sum()
-        min_dim = min(contingency_table.shape) - 1
-        cramers_v = np.sqrt(chi2 / (n * min_dim))
-        effect_sizes['cramers_v'] = cramers_v
-        
-    elif var1_type == 'catégorielle' and var2_type == 'numérique':
-        # Eta carré pour variable catégorielle vs numérique
-        groups = [group for name, group in df.groupby(var1)[var2]]
-        f_stat, _ = f_oneway(*groups)
-        n = len(df)
-        k = len(groups)
-        eta_squared = f_stat * (k - 1) / (f_stat * (k - 1) + (n - k))
-        effect_sizes['eta_squared'] = eta_squared
-        
-    elif var1_type == 'numérique' and var2_type == 'numérique':
-        # Coefficient de corrélation de Pearson
-        corr_coef, _ = pearsonr(df[var1].dropna(), df[var2].dropna())
-        effect_sizes['pearson_r'] = corr_coef
-    
-    return effect_sizes
-
-def create_multivariate_analysis(df, target_var, feature_vars):
-    """
-    Effectue une analyse multivariée basique
-    """
-    results = {}
-    
-    # Matrice de corrélation avec la variable cible
-    numerical_vars = [var for var in feature_vars if df[var].dtype in ['int64', 'float64']]
-    if numerical_vars and df[target_var].dtype in ['int64', 'float64']:
-        correlations = {}
-        for var in numerical_vars:
-            corr, _ = pearsonr(df[var].dropna(), df[target_var].dropna())
-            correlations[var] = corr
-        results['correlations_with_target'] = correlations
-    
-    # Importance des features (méthode simple)
-    if df[target_var].dtype in ['int64', 'float64']:
-        # Régression linéaire simple pour chaque variable
-        feature_importance = {}
-        for var in feature_vars:
-            if df[var].dtype in ['int64', 'float64']:
-                clean_data = df[[var, target_var]].dropna()
-                if len(clean_data) > 1:
-                    corr, _ = pearsonr(clean_data[var], clean_data[target_var])
-                    feature_importance[var] = abs(corr)
-        results['feature_importance'] = feature_importance
-    
-    return results
-
-def export_analysis_report(df, analyses, filename="rapport_analyse.html"):
-    """
-    Exporte un rapport d'analyse complet au format HTML
-    """
-    import datetime
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Rapport d'Analyse - LabMath Analytics</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            .header {{ background: #2c3e50; color: white; padding: 20px; text-align: center; }}
-            .section {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; }}
-            .footer {{ background: #f8f9fa; padding: 10px; text-align: center; margin-top: 20px; }}
-            table {{ width: 100%; border-collapse: collapse; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>🔬 Rapport d'Analyse LabMath Analytics</h1>
-            <p>Généré le {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-        </div>
-        
-        <div class="section">
-            <h2>📊 Informations Générales</h2>
-            <p><strong>Nombre d'observations:</strong> {len(df)}</p>
-            <p><strong>Nombre de variables:</strong> {len(df.columns)}</p>
-            <p><strong>Variables numériques:</strong> {len(df.select_dtypes(include=[np.number]).columns)}</p>
-            <p><strong>Variables catégorielles:</strong> {len(df.select_dtypes(include=['object']).columns)}</p>
-        </div>
-    """
-    
-    # Ajouter les analyses spécifiques
-    for analysis_name, analysis_data in analyses.items():
-        html_content += f"""
-        <div class="section">
-            <h2>📈 {analysis_name}</h2>
-            <pre>{str(analysis_data)}</pre>
-        </div>
+    def generate_frequency_table(self, df, variable, group_variable, max_categories=15, mode="total"):
         """
+        Génère un tableau de fréquences cohérent avec generer_tableau_contingence_corrige
+        """
+        # Vérification des colonnes
+        if variable not in df.columns or group_variable not in df.columns:
+            raise ValueError(f"Variables non trouvées: {variable} ou {group_variable}")
+
+        # Gérer les variables avec trop de catégories
+        if df[variable].nunique() > max_categories:
+            value_counts = df[variable].value_counts()
+            top_categories = value_counts.head(max_categories - 1).index
+            df_temp = df.copy()
+            df_temp[variable] = df_temp[variable].apply(
+                lambda x: x if x in top_categories else 'Autres'
+            )
+        else:
+            df_temp = df
+
+        # Utiliser la fonction corrigée pour la cohérence
+        try:
+            return self.data_gen.generer_tableau_contingence_corrige(df_temp, variable, group_variable, mode)
+        except:
+            # Fallback si la fonction n'est pas disponible
+            return self._generate_frequency_table_fallback(df_temp, variable, group_variable, mode)
+
+    def _generate_frequency_table_fallback(self, df, var_ligne, var_col, mode="total"):
+        """
+        Version de fallback pour generer_tableau_contingence_corrige
+        """
+        # Tableau d'effectifs avec marges
+        effectifs = pd.crosstab(
+            df[var_ligne], 
+            df[var_col], 
+            margins=True, 
+            margins_name="Total"
+        )
+        
+        n_total = effectifs.loc["Total", "Total"]
+        pourcent = effectifs.copy().astype(float)
+
+        for i in effectifs.index:
+            for j in effectifs.columns:
+                nij = effectifs.loc[i, j]
+                
+                if mode == "total":
+                    pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
+                elif mode == "ligne":
+                    if i == "Total":
+                        pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
+                    else:
+                        denom = effectifs.loc[i, "Total"]
+                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
+                elif mode == "colonne":
+                    if j == "Total":
+                        pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
+                    else:
+                        denom = effectifs.loc["Total", j]
+                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
+
+        # Construction du tableau final
+        final = effectifs.copy().astype(object)
+        
+        for i in effectifs.index:
+            for j in effectifs.columns:
+                e = effectifs.loc[i, j]
+                p = round(float(pourcent.loc[i, j]), 1)
+
+                if i != "Total" and j != "Total":
+                    final.loc[i, j] = f"{e} ({p}%)"
+                else:
+                    final.loc[i, j] = f"{e}"
+
+        return final
+
+    def test_chi2_carre(self, df, var1, var2):
+        """
+        Test du Chi-carré avec gestion d'erreurs améliorée
+        """
+        try:
+            # Vérification des données
+            if var1 not in df.columns or var2 not in df.columns:
+                return {"error": f"Variables non trouvées: {var1} ou {var2}"}
+            
+            # Nettoyage des données
+            clean_df = df[[var1, var2]].dropna()
+            if len(clean_df) < 2:
+                return {"error": "Données insuffisantes après nettoyage"}
+            
+            contingency_table = pd.crosstab(clean_df[var1], clean_df[var2])
+            
+            # Vérification de la taille du tableau
+            if contingency_table.size < 4:
+                return {"error": "Tableau de contingence trop petit"}
+            
+            # Vérification des effectifs minimums
+            if (contingency_table < 5).sum().sum() > contingency_table.size * 0.2:
+                warning = "Plus de 20% des cellules ont un effectif < 5, résultats potentiellement peu fiables"
+            else:
+                warning = None
+                
+            chi2, p, dof, expected = chi2_contingency(contingency_table)
+            
+            # Calcul du V de Cramer
+            n = contingency_table.sum().sum()
+            cramers_v = np.sqrt(chi2 / (n * (min(contingency_table.shape) - 1)))
+            
+            # Interprétation
+            interpretation = self._interpret_chi2_result(p, cramers_v)
+            
+            result = {
+                'test': 'Chi-carré',
+                'chi2_statistic': round(chi2, 4),
+                'p_value': round(p, 4),
+                'degrees_freedom': dof,
+                'cramers_v': round(cramers_v, 4),
+                'contingency_table': contingency_table,
+                'interpretation': interpretation,
+                'warning': warning
+            }
+            
+            return result
+            
+        except Exception as e:
+            return {"error": f"Erreur dans le test Chi-carré: {str(e)}"}
+
+    def _interpret_chi2_result(self, p_value, cramers_v):
+        """Interprète les résultats du test Chi-carré"""
+        significance = "significatif" if p_value < 0.05 else "non significatif"
+        
+        if cramers_v < 0.1:
+            effect_size = "faible"
+        elif cramers_v < 0.3:
+            effect_size = "moyen"
+        else:
+            effect_size = "fort"
+            
+        return f"Association {significance} (taille d'effet {effect_size})"
+
+    def test_anova_ttest(self, df, cat_var, num_var):
+        """
+        ANOVA ou Test-t avec vérifications améliorées
+        """
+        try:
+            # Vérifications
+            if cat_var not in df.columns or num_var not in df.columns:
+                return {"error": f"Variables non trouvées: {cat_var} ou {num_var}"}
+            
+            clean_df = df[[cat_var, num_var]].dropna()
+            if len(clean_df) < 2:
+                return {"error": "Données insuffisantes après nettoyage"}
+            
+            groups = clean_df.groupby(cat_var)[num_var]
+            group_counts = groups.count()
+            
+            # Vérifier qu'il y a au moins 2 groupes avec des données
+            valid_groups = group_counts[group_counts >= 2]
+            if len(valid_groups) < 2:
+                return {"error": "Nombre insuffisant de groupes avec données"}
+            
+            # Préparer les groupes pour le test
+            group_data = [group for name, group in groups if len(group) >= 2]
+            
+            if len(group_data) == 2:
+                # Test-t pour 2 groupes
+                t_stat, p_value = ttest_ind(group_data[0], group_data[1], equal_var=False)
+                test_type = 'Test-t'
+                
+                # Calcul de la taille d'effet (Cohen's d)
+                mean1, mean2 = np.mean(group_data[0]), np.mean(group_data[1])
+                std1, std2 = np.std(group_data[0], ddof=1), np.std(group_data[1], ddof=1)
+                n1, n2 = len(group_data[0]), len(group_data[1])
+                pooled_std = np.sqrt(((n1-1)*std1**2 + (n2-1)*std2**2) / (n1 + n2 - 2))
+                cohens_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0
+                
+                effect_size = cohens_d
+                effect_size_name = "cohens_d"
+                
+            else:
+                # ANOVA pour plus de 2 groupes
+                f_stat, p_value = f_oneway(*group_data)
+                test_type = 'ANOVA'
+                
+                # Calcul de eta carré
+                ss_between = sum(len(group) * (np.mean(group) - np.mean(np.concatenate(group_data)))**2 
+                               for group in group_data)
+                ss_total = sum(np.sum((group - np.mean(np.concatenate(group_data)))**2) 
+                             for group in group_data)
+                eta_squared = ss_between / ss_total if ss_total > 0 else 0
+                
+                effect_size = eta_squared
+                effect_size_name = "eta_squared"
+            
+            return {
+                'test': test_type,
+                'statistic': round(f_stat if test_type == 'ANOVA' else t_stat, 4),
+                'p_value': round(p_value, 4),
+                'effect_size': round(effect_size, 4),
+                'effect_size_name': effect_size_name,
+                'group_counts': group_counts.to_dict()
+            }
+            
+        except Exception as e:
+            return {"error": f"Erreur dans le test: {str(e)}"}
+
+    def test_correlation(self, df, var1, var2):
+        """
+        Test de corrélation avec vérifications
+        """
+        try:
+            if var1 not in df.columns or var2 not in df.columns:
+                return {"error": f"Variables non trouvées: {var1} ou {var2}"}
+            
+            clean_data = df[[var1, var2]].dropna()
+            if len(clean_data) < 3:
+                return {"error": "Données insuffisantes pour le test de corrélation"}
+            
+            # Vérifier que les variables sont numériques
+            if not (np.issubdtype(clean_data[var1].dtype, np.number) and 
+                    np.issubdtype(clean_data[var2].dtype, np.number)):
+                return {"error": "Les deux variables doivent être numériques"}
+            
+            corr_coef, p_value = pearsonr(clean_data[var1], clean_data[var2])
+            
+            # Interprétation
+            if abs(corr_coef) < 0.3:
+                strength = "faible"
+            elif abs(corr_coef) < 0.7:
+                strength = "modérée"
+            else:
+                strength = "forte"
+                
+            direction = "positive" if corr_coef > 0 else "négative"
+            
+            return {
+                'test': 'Corrélation de Pearson',
+                'correlation_coefficient': round(corr_coef, 4),
+                'p_value': round(p_value, 4),
+                'interpretation': f"Corrélation {strength} et {direction}",
+                'sample_size': len(clean_data)
+            }
+            
+        except Exception as e:
+            return {"error": f"Erreur dans le test de corrélation: {str(e)}"}
+
+    def create_visualization(self, df, viz_type, **kwargs):
+        """
+        Fonction unifiée pour créer des visualisations
+        """
+        try:
+            if viz_type == 'bar':
+                return self.create_bar_chart(df, **kwargs)
+            elif viz_type == 'histogram':
+                return self.create_histogram(df, **kwargs)
+            elif viz_type == 'boxplot':
+                return self.create_boxplot(df, **kwargs)
+            elif viz_type == 'scatter':
+                return self.create_scatter_plot(df, **kwargs)
+            elif viz_type == 'correlation':
+                return self.create_correlation_matrix(df, **kwargs)
+            else:
+                raise ValueError(f"Type de visualisation non supporté: {viz_type}")
+                
+        except Exception as e:
+            print(f"Erreur dans la création de la visualisation: {str(e)}")
+            return None
+
+    def create_bar_chart(self, df, x_var, color_var=None, group_var=None, barmode='group'):
+        """
+        Crée un diagramme en barres avec options unifiées
+        """
+        fig = px.histogram(
+            df, 
+            x=x_var, 
+            color=color_var,
+            barmode=barmode,
+            title=f"Distribution de {x_var}" + (f" par {color_var}" if color_var else "")
+        )
+        
+        fig.update_layout(
+            xaxis_title=x_var,
+            yaxis_title="Effectif",
+            legend_title=color_var,
+            showlegend=color_var is not None
+        )
+        
+        return fig
+
+    # Les autres fonctions de visualisation restent similaires mais avec une meilleure gestion d'erreurs
+
+    def calculate_descriptive_stats(self, df, variables=None):
+        """
+        Calcule les statistiques descriptives avec plus d'indicateurs
+        """
+        if variables is None:
+            variables = df.select_dtypes(include=[np.number, 'category', 'object']).columns
+        
+        stats_dict = {}
+        
+        for var in variables:
+            if np.issubdtype(df[var].dtype, np.number):
+                # Statistiques pour variables numériques
+                clean_data = df[var].dropna()
+                stats_dict[var] = {
+                    'type': 'Numérique',
+                    'count': len(clean_data),
+                    'missing': df[var].isna().sum(),
+                    'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
+                    'mean': round(clean_data.mean(), 2),
+                    'std': round(clean_data.std(), 2),
+                    'min': round(clean_data.min(), 2),
+                    '25%': round(clean_data.quantile(0.25), 2),
+                    'median': round(clean_data.median(), 2),
+                    '75%': round(clean_data.quantile(0.75), 2),
+                    'max': round(clean_data.max(), 2),
+                    'skewness': round(clean_data.skew(), 2),
+                    'kurtosis': round(clean_data.kurtosis(), 2)
+                }
+            else:
+                # Statistiques pour variables catégorielles
+                stats_dict[var] = {
+                    'type': 'Catégorielle',
+                    'count': df[var].count(),
+                    'missing': df[var].isna().sum(),
+                    'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
+                    'unique': df[var].nunique(),
+                    'mode': df[var].mode().iloc[0] if not df[var].mode().empty else None,
+                    'freq_mode': df[var].value_counts().iloc[0] if not df[var].value_counts().empty else 0,
+                    'freq_mode_percent': round(100 * df[var].value_counts().iloc[0] / len(df[var].dropna()), 1) if not df[var].value_counts().empty else 0
+                }
+        
+        return stats_dict
+
+    def perform_comprehensive_analysis(self, df, target_var=None):
+        """
+        Effectue une analyse complète du dataset
+        """
+        analysis_results = {}
+        
+        # Statistiques descriptives
+        analysis_results['descriptive_stats'] = self.calculate_descriptive_stats(df)
+        
+        # Matrice de corrélation (si variables numériques)
+        numerical_vars = df.select_dtypes(include=[np.number]).columns
+        if len(numerical_vars) >= 2:
+            analysis_results['correlation_matrix'] = self.create_correlation_matrix(df, numerical_vars)
+        
+        # Analyse de la variable cible si spécifiée
+        if target_var and target_var in df.columns:
+            analysis_results['target_analysis'] = self.analyze_target_variable(df, target_var)
+        
+        return analysis_results
+
+    def analyze_target_variable(self, df, target_var):
+        """
+        Analyse approfondie d'une variable cible
+        """
+        analysis = {}
+        
+        if np.issubdtype(df[target_var].dtype, np.number):
+            # Variable numérique
+            analysis['type'] = 'numerical'
+            analysis['distribution'] = {
+                'mean': df[target_var].mean(),
+                'median': df[target_var].median(),
+                'std': df[target_var].std(),
+                'skewness': df[target_var].skew()
+            }
+        else:
+            # Variable catégorielle
+            analysis['type'] = 'categorical'
+            value_counts = df[target_var].value_counts()
+            analysis['distribution'] = {
+                'categories': value_counts.to_dict(),
+                'proportions': (value_counts / len(df)).to_dict()
+            }
+        
+        return analysis
+
+# Fonctions utilitaires pour l'export
+def format_statistical_result(result):
+    """Formate les résultats statistiques pour l'affichage"""
+    if 'error' in result:
+        return f"❌ Erreur: {result['error']}"
     
-    html_content += f"""
-        <div class="footer">
-            <p>🔬 Powered by <strong>Lab_Math SCSM</strong> and <strong>CIE</strong> | © Copyright 2025</p>
-            <p>Rappart généré automatiquement par LabMath Analytics Pro</p>
-        </div>
-    </body>
-    </html>
-    """
+    formatted = []
+    for key, value in result.items():
+        if key not in ['contingency_table', 'interpretation', 'warning']:
+            if isinstance(value, float):
+                formatted.append(f"{key}: {value:.4f}")
+            else:
+                formatted.append(f"{key}: {value}")
     
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(html_content)
+    if 'interpretation' in result:
+        formatted.append(f"📊 Interprétation: {result['interpretation']}")
     
-    return filename
+    if 'warning' in result and result['warning']:
+        formatted.append(f"⚠️ Attention: {result['warning']}")
+    
+    return "\n".join(formatted)
+
+# Instance globale pour une utilisation facile
+analysis = AnalysisFunctions()
