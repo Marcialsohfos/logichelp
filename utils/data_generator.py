@@ -1,5 +1,5 @@
 # ================================================================
-# data_generator.py - Version FINALE CORRIGÉE
+# data_generator.py - Version FINALE AVEC TABLEAUX ÉTENDUS
 # ================================================================
 
 import pandas as pd
@@ -197,78 +197,180 @@ class DataGenerator:
 
         return df2
 
-# ============================================================
-# TABLEAUX DE CONTINGENCE - VERSION FINALE CORRIGÉE
-# ============================================================
-def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
-    """
-    Génère un tableau de contingence avec formules statistiques correctes.
-    Format: effectif (pourcentage%) pour les cellules internes, effectifs seulement pour les totaux
-    """
-    
-    # Vérification des colonnes
-    if var_ligne not in df.columns or var_col not in df.columns:
-        raise ValueError(f"Variables non trouvées: {var_ligne} ou {var_col}")
+    # ============================================================
+    # TABLEAUX DE CONTINGENCE ÉTENDUS - NOUVELLE VERSION
+    # ============================================================
+    def generer_tableau_contingence_etendu(self, df, var_ligne, var_col, mode="colonne"):
+        """
+        Génère un tableau de contingence étendu avec colonnes séparées pour effectifs et pourcentages
+        Format: Type d'établissement | Level I (n) | Level I (%) | Level II (n) | Level II (%) | ... | Total (n) | Total (%)
+        """
+        # Vérification des colonnes
+        if var_ligne not in df.columns or var_col not in df.columns:
+            raise ValueError(f"Variables non trouvées: {var_ligne} ou {var_col}")
 
-    # Tableau d'effectifs avec marges
-    effectifs = pd.crosstab(
-        df[var_ligne], 
-        df[var_col], 
-        margins=True, 
-        margins_name="Total"
-    )
-    
-    n_total = effectifs.loc["Total", "Total"]
+        # Tableau d'effectifs sans marges pour calculs
+        effectifs_base = pd.crosstab(df[var_ligne], df[var_col], margins=False)
+        
+        # Calcul des totaux
+        totaux_lignes = effectifs_base.sum(axis=1)
+        totaux_colonnes = effectifs_base.sum(axis=0)
+        total_general = effectifs_base.sum().sum()
 
-    # Tableau des pourcentages selon le mode
-    pourcent = effectifs.copy().astype(float)
+        # Déterminer l'ordre des colonnes pour le tableau final
+        categories_colonnes = effectifs_base.columns.tolist()
+        categories_lignes = effectifs_base.index.tolist()
+        
+        # Créer les colonnes multi-niveaux
+        colonnes_tableau = []
+        for col in categories_colonnes:
+            colonnes_tableau.extend([(col, 'n'), (col, '%')])
+        colonnes_tableau.extend([('Total', 'n'), ('Total', '%')])
+        
+        # DataFrame vide pour le résultat
+        tableau_final = pd.DataFrame(
+            index=categories_lignes + ['Total'],
+            columns=pd.MultiIndex.from_tuples(colonnes_tableau)
+        )
+        
+        # Remplir le tableau selon le mode
+        if mode == "colonne":
+            self._remplir_mode_colonne(tableau_final, effectifs_base, totaux_lignes, totaux_colonnes, total_general)
+        elif mode == "ligne":
+            self._remplir_mode_ligne(tableau_final, effectifs_base, totaux_lignes, totaux_colonnes, total_general)
+        elif mode == "total":
+            self._remplir_mode_total(tableau_final, effectifs_base, totaux_lignes, totaux_colonnes, total_general)
+        else:
+            raise ValueError("Mode non reconnu. Utiliser 'colonne', 'ligne' ou 'total'")
+        
+        return tableau_final
 
-    for i in effectifs.index:
-        for j in effectifs.columns:
-            nij = effectifs.loc[i, j]
+    def _remplir_mode_colonne(self, tableau, effectifs, totaux_lignes, totaux_colonnes, total_general):
+        """Remplit le tableau en mode colonne (pourcentages par colonne)"""
+        categories_colonnes = effectifs.columns
+        categories_lignes = effectifs.index
+        
+        # Cellules internes
+        for ligne in categories_lignes:
+            for col in categories_colonnes:
+                n = effectifs.loc[ligne, col]
+                pourcentage = (n / totaux_colonnes[col]) * 100 if totaux_colonnes[col] > 0 else 0
+                tableau.loc[ligne, (col, 'n')] = n
+                tableau.loc[ligne, (col, '%')] = f"{pourcentage:.2f}".replace('.', ',')
+        
+        # Totaux de ligne
+        for ligne in categories_lignes:
+            n_total = totaux_lignes[ligne]
+            pourcentage_total = (n_total / total_general) * 100
+            tableau.loc[ligne, ('Total', 'n')] = n_total
+            tableau.loc[ligne, ('Total', '%')] = f"{pourcentage_total:.2f}".replace('.', ',')
+        
+        # Ligne Total
+        for col in categories_colonnes:
+            n_total_col = totaux_colonnes[col]
+            tableau.loc['Total', (col, 'n')] = n_total_col
+            tableau.loc['Total', (col, '%')] = "100,00"  # 100% par colonne
+        
+        # Cellule Total-Total
+        tableau.loc['Total', ('Total', 'n')] = total_general
+        tableau.loc['Total', ('Total', '%')] = "100,00"
 
-            # MODE TOTAL
-            if mode == "total":
-                # Pourcentages sur le total général pour toutes les cellules
-                pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
+    def _remplir_mode_ligne(self, tableau, effectifs, totaux_lignes, totaux_colonnes, total_general):
+        """Remplit le tableau en mode ligne (pourcentages par ligne)"""
+        categories_colonnes = effectifs.columns
+        categories_lignes = effectifs.index
+        
+        # Cellules internes
+        for ligne in categories_lignes:
+            for col in categories_colonnes:
+                n = effectifs.loc[ligne, col]
+                pourcentage = (n / totaux_lignes[ligne]) * 100 if totaux_lignes[ligne] > 0 else 0
+                tableau.loc[ligne, (col, 'n')] = n
+                tableau.loc[ligne, (col, '%')] = f"{pourcentage:.2f}".replace('.', ',')
+        
+        # Totaux de ligne (toujours 100% en mode ligne)
+        for ligne in categories_lignes:
+            n_total = totaux_lignes[ligne]
+            tableau.loc[ligne, ('Total', 'n')] = n_total
+            tableau.loc[ligne, ('Total', '%')] = "100,00"
+        
+        # Ligne Total
+        for col in categories_colonnes:
+            n_total_col = totaux_colonnes[col]
+            pourcentage_total_col = (n_total_col / total_general) * 100
+            tableau.loc['Total', (col, 'n')] = n_total_col
+            tableau.loc['Total', (col, '%')] = f"{pourcentage_total_col:.2f}".replace('.', ',')
+        
+        # Cellule Total-Total
+        tableau.loc['Total', ('Total', 'n')] = total_general
+        tableau.loc['Total', ('Total', '%')] = "100,00"
 
-            # MODE LIGNE
-            elif mode == "ligne":
-                if i == "Total":
-                    # Dernière ligne : pourcentage sur total général
-                    pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
-                else:
-                    # Cellules internes : pourcentage par ligne
-                    denom = effectifs.loc[i, "Total"]
-                    pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
+    def _remplir_mode_total(self, tableau, effectifs, totaux_lignes, totaux_colonnes, total_general):
+        """Remplit le tableau en mode total (pourcentages sur le total général)"""
+        categories_colonnes = effectifs.columns
+        categories_lignes = effectifs.index
+        
+        # Cellules internes
+        for ligne in categories_lignes:
+            for col in categories_colonnes:
+                n = effectifs.loc[ligne, col]
+                pourcentage = (n / total_general) * 100
+                tableau.loc[ligne, (col, 'n')] = n
+                tableau.loc[ligne, (col, '%')] = f"{pourcentage:.2f}".replace('.', ',')
+        
+        # Totaux de ligne
+        for ligne in categories_lignes:
+            n_total = totaux_lignes[ligne]
+            pourcentage_total = (n_total / total_general) * 100
+            tableau.loc[ligne, ('Total', 'n')] = n_total
+            tableau.loc[ligne, ('Total', '%')] = f"{pourcentage_total:.2f}".replace('.', ',')
+        
+        # Ligne Total
+        for col in categories_colonnes:
+            n_total_col = totaux_colonnes[col]
+            pourcentage_total_col = (n_total_col / total_general) * 100
+            tableau.loc['Total', (col, 'n')] = n_total_col
+            tableau.loc['Total', (col, '%')] = f"{pourcentage_total_col:.2f}".replace('.', ',')
+        
+        # Cellule Total-Total
+        tableau.loc['Total', ('Total', 'n')] = total_general
+        tableau.loc['Total', ('Total', '%')] = "100,00"
 
-            # MODE COLONNE
-            elif mode == "colonne":
-                if j == "Total":
-                    # Dernière colonne : pourcentage sur total général
-                    pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
-                else:
-                    # Cellules internes : pourcentage par colonne
-                    denom = effectifs.loc["Total", j]
-                    pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
+    def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
+        """
+        Fonction maintenue pour la compatibilité - utilise maintenant la version étendue
+        """
+        tableau_etendu = self.generer_tableau_contingence_etendu(df, var_ligne, var_col, mode)
+        return self._convertir_etendu_vers_classique(tableau_etendu)
 
-    # Construction du tableau final
-    final = effectifs.copy().astype(object)
-    
-    for i in effectifs.index:
-        for j in effectifs.columns:
-            e = effectifs.loc[i, j]
-            p = round(float(pourcent.loc[i, j]), 1)
+    def _convertir_etendu_vers_classique(self, tableau_etendu):
+        """Convertit un tableau étendu en format classique pour la compatibilité"""
+        # Extraire les colonnes d'effectifs seulement
+        colonnes_effectifs = [col for col in tableau_etendu.columns if col[1] == 'n']
+        tableau_classique = tableau_etendu[colonnes_effectifs].copy()
+        
+        # Renommer les colonnes pour enlever le multi-index
+        tableau_classique.columns = [col[0] for col in colonnes_effectifs]
+        
+        return tableau_classique
 
-            # Cellules internes : effectif (pourcentage%)
-            if i != "Total" and j != "Total":
-                final.loc[i, j] = f"{e} ({p}%)"
-            
-            # Cellules des totaux : effectif seulement
-            else:
-                final.loc[i, j] = f"{e}"
-
-    return final
+    def formater_tableau_affichage(self, tableau):
+        """
+        Formate le tableau pour l'affichage en console
+        """
+        # Créer une copie pour la formattation
+        tableau_formate = tableau.copy()
+        
+        # Formater tous les nombres
+        for col in tableau_formate.columns:
+            for idx in tableau_formate.index:
+                valeur = tableau_formate.loc[idx, col]
+                if isinstance(valeur, (int, np.integer)):
+                    tableau_formate.loc[idx, col] = f"{valeur}"
+                elif isinstance(valeur, float):
+                    tableau_formate.loc[idx, col] = f"{valeur:.2f}".replace('.', ',')
+        
+        return tableau_formate
 
     # ------------------------------------------------------------
     def afficher_formules_statistiques(self):
@@ -312,7 +414,7 @@ def creer_interface_tableaux_contingence(df):
     Crée une interface Streamlit pour les tableaux de contingence
     """
     
-    st.header("📊 Tableaux de Contingence - Version Finale Corrigée")
+    st.header("📊 Tableaux de Contingence - Version Étendue")
 
     gen = DataGenerator()
     
@@ -320,7 +422,7 @@ def creer_interface_tableaux_contingence(df):
     with st.expander("ℹ️ Informations et formules"):
         st.markdown(gen.afficher_formules_statistiques())
         st.info(
-            "**Note importante :** En mode **Ligne** ou **Colonne**, le total de marge correspondant affiche **(100.0)** après l'effectif pour indiquer que la somme des pourcentages des cellules internes est bien 100%."
+            "**Nouveau format :** Les tableaux affichent maintenant des colonnes séparées pour les effectifs (n) et les pourcentages (%)"
         )
 
     # Sélection des variables
@@ -341,7 +443,7 @@ def creer_interface_tableaux_contingence(df):
     # Sélection du mode
     mode = st.radio(
         "Type de pourcentage :", 
-        ["total", "ligne", "colonne"], 
+        ["colonne", "ligne", "total"], 
         horizontal=True,
         format_func=lambda x: {
             "total": "🟦 Pourcentages totaux",
@@ -351,12 +453,12 @@ def creer_interface_tableaux_contingence(df):
     )
 
     # Bouton de génération
-    if st.button("🔄 Générer le tableau", type="primary"):
+    if st.button("🔄 Générer le tableau étendu", type="primary"):
         try:
             with st.spinner("Calcul du tableau en cours..."):
-                tab = gen.generer_tableau_contingence_corrige(df, var_ligne, var_col, mode)
+                tab = gen.generer_tableau_contingence_etendu(df, var_ligne, var_col, mode)
             
-            st.success("✅ Tableau généré avec succès !")
+            st.success("✅ Tableau étendu généré avec succès !")
             
             # Affichage du tableau
             st.dataframe(tab, use_container_width=True)
@@ -391,16 +493,9 @@ if __name__ == "__main__":
     df = gen.generate_complex_dataset(300)
     print(f"✅ Dataset généré : {df.shape[0]} observations, {df.shape[1]} variables")
     
-    # Test des tableaux de contingence (mode ligne)
-    print("\n📋 Test tableau de contingence (mode ligne) :")
-    tableau_test_ligne = gen.generer_tableau_contingence_corrige(
-        df, "Type_Etablissement", "Niveau_Complexite", "ligne"
-    )
-    print(tableau_test_ligne)
-
-    # Test des tableaux de contingence (mode colonne)
-    print("\n📋 Test tableau de contingence (mode colonne) :")
-    tableau_test_colonne = gen.generer_tableau_contingence_corrige(
+    # Test des tableaux de contingence étendus
+    print("\n📋 Test tableau de contingence étendu (mode colonne) :")
+    tableau_test = gen.generer_tableau_contingence_etendu(
         df, "Type_Etablissement", "Niveau_Complexite", "colonne"
     )
-    print(tableau_test_colonne)
+    print(tableau_test)

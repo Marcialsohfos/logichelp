@@ -6,15 +6,46 @@ from scipy import stats
 from scipy.stats import chi2_contingency, f_oneway, ttest_ind, pearsonr, shapiro
 import matplotlib.pyplot as plt
 import seaborn as sns
-from data_generator import DataGenerator  # Import pour la cohérence des tableaux
+from data_generator import DataGenerator
 
 class AnalysisFunctions:
     def __init__(self):
         self.data_gen = DataGenerator()
     
-    def generate_frequency_table(self, df, variable, group_variable, max_categories=15, mode="total"):
+    def generate_frequency_table(self, df, variable, group_variable, max_categories=15, mode="colonne"):
         """
-        Génère un tableau de fréquences cohérent avec generer_tableau_contingence_corrige
+        Génère un tableau de fréquences étendu selon le format demandé
+        Utilise la nouvelle fonction generer_tableau_contingence_etendu
+        """
+        # Vérification des colonnes
+        if variable not in df.columns or group_variable not in df.columns:
+            raise ValueError(f"Variables non trouvées: {variable} ou {group_variable}")
+
+        # Gérer les variables avec trop de catégories
+        df_temp = self._gerer_categories_nombreuses(df, variable, max_categories)
+        
+        # Générer le tableau étendu
+        tableau_etendu = self.data_gen.generer_tableau_contingence_etendu(
+            df_temp, variable, group_variable, mode
+        )
+        
+        return tableau_etendu
+
+    def _gerer_categories_nombreuses(self, df, variable, max_categories):
+        """Gère les variables avec trop de catégories"""
+        if df[variable].nunique() > max_categories:
+            value_counts = df[variable].value_counts()
+            top_categories = value_counts.head(max_categories - 1).index
+            df_temp = df.copy()
+            df_temp[variable] = df_temp[variable].apply(
+                lambda x: x if x in top_categories else 'Autres'
+            )
+            return df_temp
+        return df.copy()
+
+    def generate_frequency_table_classique(self, df, variable, group_variable, max_categories=15, mode="total"):
+        """
+        Version classique maintenue pour la compatibilité
         """
         # Vérification des colonnes
         if variable not in df.columns or group_variable not in df.columns:
@@ -31,7 +62,7 @@ class AnalysisFunctions:
         else:
             df_temp = df
 
-        # Utiliser la fonction corrigée pour la cohérence
+        # Utiliser la fonction classique pour la cohérence
         try:
             return self.data_gen.generer_tableau_contingence_corrige(df_temp, variable, group_variable, mode)
         except:
@@ -86,6 +117,12 @@ class AnalysisFunctions:
                     final.loc[i, j] = f"{e}"
 
         return final
+
+    def afficher_tableau_contingence(self, tableau):
+        """
+        Affiche un tableau de contingence formaté
+        """
+        return self.data_gen.formater_tableau_affichage(tableau)
 
     def test_chi2_carre(self, df, var1, var2):
         """
@@ -279,28 +316,49 @@ class AnalysisFunctions:
             print(f"Erreur dans la création de la visualisation: {str(e)}")
             return None
 
-    def create_bar_chart(self, df, x_var, color_var=None, group_var=None, barmode='group'):
-        """
-        Crée un diagramme en barres avec options unifiées
-        """
-        fig = px.histogram(
-            df, 
-            x=x_var, 
-            color=color_var,
-            barmode=barmode,
-            title=f"Distribution de {x_var}" + (f" par {color_var}" if color_var else "")
-        )
+    def create_bar_chart(self, df, x_var, color_var=None, title=None):
+        """Crée un diagramme en barres"""
+        if title is None:
+            title = f"Distribution de {x_var}" + (f" par {color_var}" if color_var else "")
         
-        fig.update_layout(
-            xaxis_title=x_var,
-            yaxis_title="Effectif",
-            legend_title=color_var,
-            showlegend=color_var is not None
-        )
-        
+        fig = px.histogram(df, x=x_var, color=color_var, barmode='group', title=title)
         return fig
 
-    # Les autres fonctions de visualisation restent similaires mais avec une meilleure gestion d'erreurs
+    def create_histogram(self, df, num_var, color_var=None, title=None):
+        """Crée un histogramme"""
+        if title is None:
+            title = f"Distribution de {num_var}"
+        
+        fig = px.histogram(df, x=num_var, color=color_var, marginal="box", title=title)
+        return fig
+
+    def create_boxplot(self, df, cat_var, num_var, title=None):
+        """Crée un boxplot"""
+        if title is None:
+            title = f"Distribution de {num_var} par {cat_var}"
+        
+        fig = px.box(df, x=cat_var, y=num_var, title=title)
+        return fig
+
+    def create_scatter_plot(self, df, x_var, y_var, color_var=None, title=None):
+        """Crée un scatter plot"""
+        if title is None:
+            title = f"Relation entre {x_var} et {y_var}"
+        
+        fig = px.scatter(df, x=x_var, y=y_var, color=color_var, title=title)
+        return fig
+
+    def create_correlation_matrix(self, df, numerical_vars=None):
+        """Crée une matrice de corrélation"""
+        if numerical_vars is None:
+            numerical_vars = df.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if len(numerical_vars) < 2:
+            return None
+        
+        corr_matrix = df[numerical_vars].corr()
+        fig = px.imshow(corr_matrix, title="Matrice de Corrélation", aspect="auto")
+        return fig, corr_matrix
 
     def calculate_descriptive_stats(self, df, variables=None):
         """
@@ -332,15 +390,17 @@ class AnalysisFunctions:
                 }
             else:
                 # Statistiques pour variables catégorielles
+                value_counts = df[var].value_counts()
                 stats_dict[var] = {
                     'type': 'Catégorielle',
                     'count': df[var].count(),
                     'missing': df[var].isna().sum(),
                     'missing_percent': round(100 * df[var].isna().sum() / len(df), 1),
                     'unique': df[var].nunique(),
-                    'mode': df[var].mode().iloc[0] if not df[var].mode().empty else None,
-                    'freq_mode': df[var].value_counts().iloc[0] if not df[var].value_counts().empty else 0,
-                    'freq_mode_percent': round(100 * df[var].value_counts().iloc[0] / len(df[var].dropna()), 1) if not df[var].value_counts().empty else 0
+                    'mode': value_counts.index[0] if len(value_counts) > 0 else None,
+                    'freq_mode': value_counts.iloc[0] if len(value_counts) > 0 else 0,
+                    'freq_mode_percent': round(100 * value_counts.iloc[0] / len(df[var].dropna()), 1) if len(value_counts) > 0 else 0,
+                    'categories': value_counts.to_dict()
                 }
         
         return stats_dict
@@ -357,11 +417,9 @@ class AnalysisFunctions:
         # Matrice de corrélation (si variables numériques)
         numerical_vars = df.select_dtypes(include=[np.number]).columns
         if len(numerical_vars) >= 2:
-            analysis_results['correlation_matrix'] = self.create_correlation_matrix(df, numerical_vars)
-        
-        # Analyse de la variable cible si spécifiée
-        if target_var and target_var in df.columns:
-            analysis_results['target_analysis'] = self.analyze_target_variable(df, target_var)
+            corr_result = self.create_correlation_matrix(df, numerical_vars)
+            if corr_result:
+                analysis_results['correlation_matrix'] = corr_result
         
         return analysis_results
 
