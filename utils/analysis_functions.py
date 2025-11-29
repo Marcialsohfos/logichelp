@@ -9,49 +9,95 @@ import seaborn as sns
 
 def generate_conditional_table(df, row_variable, column_variable, percentage_type='col'):
     """
-    Génère un tableau conditionnel formaté avec effectifs et pourcentages
-    Similaire à l'exemple fourni
+    Génère un tableau conditionnel formaté avec effectifs et pourcentages CORRECTS
     """
-    # Créer le tableau croisé de base
+    # Créer le tableau croisé de base sans marges d'abord
     cross_tab = pd.crosstab(
         df[row_variable], 
         df[column_variable],
-        margins=True,
-        margins_name="Total"
+        margins=False
     )
     
-    # Calculer les pourcentages
+    # Calculer les totaux manuellement pour garantir l'exactitude
+    row_totals = cross_tab.sum(axis=1)
+    col_totals = cross_tab.sum(axis=0)
+    grand_total = cross_tab.sum().sum()
+    
+    # Ajouter les totaux manuellement
+    cross_tab_with_margins = cross_tab.copy()
+    cross_tab_with_margins['Total'] = row_totals
+    total_row = col_totals.copy()
+    total_row['Total'] = grand_total
+    cross_tab_with_margins.loc['Total'] = total_row
+    
+    # Calculer les pourcentages CORRECTS
     if percentage_type == 'col':
-        percent_tab = (cross_tab.div(cross_tab.iloc[-1]) * 100).round(2)
+        # Pourcentages par colonne
+        percent_data = []
+        for row_idx, row_name in enumerate(cross_tab_with_margins.index):
+            row_percents = []
+            for col_idx, col_name in enumerate(cross_tab_with_margins.columns):
+                count = cross_tab_with_margins.iloc[row_idx, col_idx]
+                if col_name == 'Total':
+                    # Pour la colonne Total, utiliser le total général comme dénominateur
+                    percent = (count / grand_total * 100) if grand_total > 0 else 0
+                else:
+                    # Pour les autres colonnes, utiliser le total de la colonne
+                    col_total = cross_tab_with_margins.loc['Total', col_name]
+                    percent = (count / col_total * 100) if col_total > 0 else 0
+                row_percents.append(percent)
+            percent_data.append(row_percents)
+        
+        percent_df = pd.DataFrame(percent_data, 
+                                index=cross_tab_with_margins.index,
+                                columns=cross_tab_with_margins.columns)
+    
     elif percentage_type == 'row':
-        percent_tab = (cross_tab.div(cross_tab.sum(axis=1), axis=0) * 100).round(2)
-    else:  # total
-        percent_tab = (cross_tab / cross_tab.iloc[-1, -1] * 100).round(2)
+        # Pourcentages par ligne
+        percent_data = []
+        for row_idx, row_name in enumerate(cross_tab_with_margins.index):
+            row_percents = []
+            for col_idx, col_name in enumerate(cross_tab_with_margins.columns):
+                count = cross_tab_with_margins.iloc[row_idx, col_idx]
+                if row_name == 'Total':
+                    # Pour la ligne Total, utiliser le total général comme dénominateur
+                    percent = (count / grand_total * 100) if grand_total > 0 else 0
+                else:
+                    # Pour les autres lignes, utiliser le total de la ligne
+                    row_total = cross_tab_with_margins.loc[row_name, 'Total']
+                    percent = (count / row_total * 100) if row_total > 0 else 0
+                row_percents.append(percent)
+            percent_data.append(row_percents)
+        
+        percent_df = pd.DataFrame(percent_data,
+                                index=cross_tab_with_margins.index,
+                                columns=cross_tab_with_margins.columns)
     
-    # Créer un nouveau DataFrame combiné
+    else:  # 'all' - pourcentages du total général
+        percent_df = cross_tab_with_margins / grand_total * 100
+    
+    # Arrondir les pourcentages
+    percent_df = percent_df.round(1)
+    
+    # Créer le tableau combiné final
     combined_data = []
-    
-    # Pour chaque ligne (incluant la ligne Total)
-    for row_idx, row_name in enumerate(cross_tab.index):
+    for row_idx, row_name in enumerate(cross_tab_with_margins.index):
         row_data = []
-        
-        # Pour chaque colonne (incluant la colonne Total)
-        for col_idx, col_name in enumerate(cross_tab.columns):
-            count = cross_tab.iloc[row_idx, col_idx]
-            percent = percent_tab.iloc[row_idx, col_idx]
+        for col_idx, col_name in enumerate(cross_tab_with_margins.columns):
+            count = cross_tab_with_margins.iloc[row_idx, col_idx]
+            percent = percent_df.iloc[row_idx, col_idx]
             row_data.extend([count, percent])
-        
         combined_data.append(row_data)
     
     # Créer les noms de colonnes
     column_names = []
-    for col_name in cross_tab.columns:
+    for col_name in cross_tab_with_margins.columns:
         column_names.extend([col_name, '%'])
     
     # Créer le DataFrame final
     result_df = pd.DataFrame(
         combined_data,
-        index=cross_tab.index,
+        index=cross_tab_with_margins.index,
         columns=column_names
     )
     
@@ -61,17 +107,18 @@ def format_conditional_table(conditional_df, title="Tableau Conditionnel"):
     """
     Formate le tableau conditionnel avec un style professionnel
     """
-    # Formater les pourcentages avec des virgules
+    # Formater les nombres
     styled_df = conditional_df.copy()
     for col in styled_df.columns:
         if col == '%' or '%' in str(col):
+            # Formater les pourcentages avec virgule
             styled_df[col] = styled_df[col].apply(
-                lambda x: f"{x:,.2f}".replace('.', ',').replace(',', 'X').replace('X', ',') 
-                if isinstance(x, (int, float)) else x
+                lambda x: f"{x:.1f}%" if isinstance(x, (int, float)) else x
             )
         else:
+            # Formater les entiers
             styled_df[col] = styled_df[col].apply(
-                lambda x: f"{x:,.0f}".replace(',', ' ') if isinstance(x, (int, float)) else x
+                lambda x: f"{int(x)}" if isinstance(x, (int, float)) and x == int(x) else x
             )
     
     # Appliquer le style
@@ -100,96 +147,35 @@ def format_conditional_table(conditional_df, title="Tableau Conditionnel"):
     ]).set_caption(
         f"<b>{title}</b><br>"
         f"<span style='font-size: 12px;'>Effectifs et pourcentages (%)</span>"
-    ).set_table_attributes('class="dataframe" border="1"')
+    )
     
     return styled_table
 
-def generate_multiple_conditional_tables(df, row_variables, column_variable):
+def create_healthcare_analysis(df):
     """
-    Génère plusieurs tableaux conditionnels pour différentes variables lignes
+    Crée une analyse complète pour le domaine de la santé
     """
-    tables = {}
+    analyses = {}
     
-    for row_var in row_variables:
-        if row_var in df.columns and column_variable in df.columns:
-            table = generate_conditional_table(df, row_var, column_variable)
-            tables[row_var] = table
-    
-    return tables
-
-def create_comprehensive_analysis(df, main_row_var, main_col_var, additional_vars=None):
-    """
-    Crée une analyse complète avec tableau conditionnel principal
-    """
-    if additional_vars is None:
-        additional_vars = []
-    
-    # Tableau conditionnel principal
-    main_table = generate_conditional_table(df, main_row_var, main_col_var)
-    formatted_main_table = format_conditional_table(
-        main_table, 
-        f"Tableau Conditionnel: {main_row_var} par {main_col_var}"
-    )
-    
-    # Tableaux supplémentaires si demandés
-    additional_tables = {}
-    for var in additional_vars:
-        if var in df.columns:
-            additional_tables[var] = generate_conditional_table(df, var, main_col_var)
-    
-    return {
-        'main_table': formatted_main_table,
-        'main_table_data': main_table,
-        'additional_tables': additional_tables
-    }
-
-def generate_frequency_table(df, variable, group_variable, max_categories=15):
-    """
-    Génère un tableau de fréquences avec effectifs et pourcentages
-    """
-    # Gérer les variables avec trop de catégories
-    if df[variable].nunique() > max_categories:
-        # Regrouper les catégories peu fréquentes
-        value_counts = df[variable].value_counts()
-        top_categories = value_counts.head(max_categories - 1).index
-        df_temp = df.copy()
-        df_temp[variable] = df_temp[variable].apply(
-            lambda x: x if x in top_categories else 'Autres'
+    # Tableau conditionnel principal : Type d'établissement par Niveau de complexité
+    if 'Type_Etablissement' in df.columns and 'Niveau_Complexite' in df.columns:
+        main_table = generate_conditional_table(df, 'Type_Etablissement', 'Niveau_Complexite', 'col')
+        analyses['type_etablissement_niveau'] = format_conditional_table(
+            main_table, 
+            "Répartition des établissements par type et niveau de complexité"
         )
-    else:
-        df_temp = df
     
-    # Créer le tableau croisé
-    cross_tab = pd.crosstab(
-        df_temp[variable], 
-        df_temp[group_variable],
-        margins=True,
-        margins_name="Total"
-    )
+    # Tableau conditionnel : Glycosurie/Albuminurie par Niveau de complexité
+    if 'Glycosurie_Albuminurie' in df.columns and 'Niveau_Complexite' in df.columns:
+        medical_table = generate_conditional_table(df, 'Glycosurie_Albuminurie', 'Niveau_Complexite', 'all')
+        analyses['medical_niveau'] = format_conditional_table(
+            medical_table,
+            "Prévalence de la glycosurie et albuminurie par niveau de complexité"
+        )
     
-    # Ajouter les pourcentages
-    percent_tab = cross_tab.div(cross_tab.iloc[-1]) * 100
-    
-    # Combiner effectifs et pourcentages
-    result_tab = cross_tab.astype(str) + " (" + percent_tab.round(2).astype(str) + "%)"
-    
-    return result_tab
+    return analyses
 
-def display_frequency_table(table_df, show_percentages=True, show_totals=True):
-    """
-    Affiche un tableau de fréquences formaté
-    """
-    # Appliquer le style
-    styled_table = table_df.style.set_properties(**{
-        'text-align': 'center',
-        'border': '1px solid black'
-    }).set_table_styles([{
-        'selector': 'th',
-        'props': [('background-color', '#366092'), ('color', 'white')]
-    }])
-    
-    return styled_table
-
+# Fonctions statistiques conservées (sans les tableaux de contingence problématiques)
 def test_chi2_carre(df, var1, var2):
     """
     Test du Chi-carré pour deux variables catégorielles
@@ -206,8 +192,7 @@ def test_chi2_carre(df, var1, var2):
             'test': 'Chi-carré',
             'chi2_statistic': chi2,
             'p_value': p,
-            'degrees_freedom': dof,
-            'contingency_table': contingency_table
+            'degrees_freedom': dof
         }
         
         return result
@@ -249,35 +234,21 @@ def test_correlation(df, var1, var2):
         'p_value': p_value
     }
 
-def create_bar_chart(df, x_var, color_var=None, group_var=None):
+def create_bar_chart(df, x_var, color_var=None):
     """
     Crée un diagramme en barres interactif
     """
-    if group_var:
+    if color_var:
         fig = px.histogram(df, x=x_var, color=color_var, barmode='group',
                           title=f"Distribution de {x_var} par {color_var}")
     else:
-        fig = px.histogram(df, x=x_var, color=color_var,
-                          title=f"Distribution de {x_var} par {color_var}")
+        fig = px.histogram(df, x=x_var, title=f"Distribution de {x_var}")
     
     fig.update_layout(
         xaxis_title=x_var,
         yaxis_title="Effectif",
         legend_title=color_var
     )
-    
-    return fig
-
-def create_stacked_bar_chart(df, x_var, stack_var=None, color_var=None):
-    """
-    Crée un diagramme en bande (stacked bar chart)
-    """
-    if color_var:
-        fig = px.histogram(df, x=x_var, color=stack_var, barmode='stack',
-                          facet_col=color_var, title=f"Diagramme en bande: {x_var} par {stack_var}")
-    else:
-        fig = px.histogram(df, x=x_var, color=stack_var, barmode='stack',
-                          title=f"Diagramme en bande: {x_var} par {stack_var}")
     
     return fig
 
@@ -299,49 +270,6 @@ def create_boxplot(df, cat_var, num_var):
     """
     fig = px.box(df, x=cat_var, y=num_var, 
                 title=f"Distribution de {num_var} par {cat_var}")
-    return fig
-
-def create_scatter_plot(df, x_var, y_var, color_var=None):
-    """
-    Crée un scatter plot
-    """
-    if color_var:
-        fig = px.scatter(df, x=x_var, y=y_var, color=color_var,
-                        title=f"Relation entre {x_var} et {y_var}")
-    else:
-        fig = px.scatter(df, x=x_var, y=y_var,
-                        title=f"Relation entre {x_var} et {y_var}")
-    
-    # Ajouter la ligne de régression si les données sont numériques
-    if df[x_var].dtype in ['int64', 'float64'] and df[y_var].dtype in ['int64', 'float64']:
-        try:
-            # Calculer la régression linéaire
-            clean_data = df[[x_var, y_var]].dropna()
-            if len(clean_data) > 1:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(clean_data[x_var], clean_data[y_var])
-                line_x = np.array([clean_data[x_var].min(), clean_data[x_var].max()])
-                line_y = intercept + slope * line_x
-                
-                fig.add_trace(go.Scatter(
-                    x=line_x,
-                    y=line_y,
-                    mode='lines',
-                    name=f'Régression (r={r_value:.2f})',
-                    line=dict(color='red', dash='dash')
-                ))
-        except:
-            pass  # Ignorer les erreurs de régression
-    
-    return fig
-
-def create_3d_visualization(df, var1, var2, var3, color_var):
-    """
-    Crée une visualisation 3D interactive
-    """
-    # Scatter plot 3D
-    fig = px.scatter_3d(df, x=var1, y=var2, z=var3, color=color_var,
-                       title=f"Visualisation 3D: {var1}, {var2}, {var3}")
-    
     return fig
 
 def calculate_descriptive_stats(df, variables=None):
@@ -401,194 +329,18 @@ def create_correlation_matrix(df, numerical_vars=None):
     
     return fig, corr_matrix
 
-def perform_normality_test(df, numerical_vars=None):
-    """
-    Effectue le test de normalité de Shapiro-Wilk sur les variables numériques
-    """
-    if numerical_vars is None:
-        numerical_vars = df.select_dtypes(include=[np.number]).columns.tolist()
-    
-    normality_results = {}
-    
-    for var in numerical_vars:
-        clean_data = df[var].dropna()
-        if len(clean_data) >= 3 and len(clean_data) <= 5000:  # Limitations du test Shapiro-Wilk
-            stat, p_value = stats.shapiro(clean_data)
-            normality_results[var] = {
-                'statistic': stat,
-                'p_value': p_value,
-                'normal': p_value > 0.05
-            }
-        else:
-            normality_results[var] = {
-                'statistic': None,
-                'p_value': None,
-                'normal': None,
-                'message': 'Échantillon trop petit ou trop grand pour Shapiro-Wilk'
-            }
-    
-    return normality_results
-
-def create_interactive_distribution(df, variable, group_var=None):
-    """
-    Crée une visualisation interactive de la distribution
-    """
-    if df[variable].dtype in ['int64', 'float64']:
-        # Variable numérique - histogramme + boxplot
-        if group_var:
-            fig = px.histogram(df, x=variable, color=group_var, 
-                             marginal="box", barmode="overlay",
-                             title=f"Distribution de {variable} par {group_var}")
-        else:
-            fig = px.histogram(df, x=variable, marginal="box",
-                             title=f"Distribution de {variable}")
-    else:
-        # Variable catégorielle - diagramme en barres
-        if group_var:
-            fig = px.histogram(df, x=variable, color=group_var, barmode='group',
-                             title=f"Distribution de {variable} par {group_var}")
-        else:
-            value_counts = df[variable].value_counts().reset_index()
-            value_counts.columns = [variable, 'count']
-            fig = px.bar(value_counts, x=variable, y='count',
-                        title=f"Distribution de {variable}")
-    
-    return fig
-
-def calculate_effect_size(df, var1, var2):
-    """
-    Calcule la taille d'effet pour différentes combinaisons de variables
-    """
-    effect_sizes = {}
-    
-    # Vérifier les types de variables
-    var1_type = 'catégorielle' if df[var1].dtype == 'object' or df[var1].nunique() < 10 else 'numérique'
-    var2_type = 'catégorielle' if df[var2].dtype == 'object' or df[var2].nunique() < 10 else 'numérique'
-    
-    if var1_type == 'catégorielle' and var2_type == 'catégorielle':
-        # V de Cramer pour deux variables catégorielles
-        contingency_table = pd.crosstab(df[var1], df[var2])
-        chi2, _, _, _ = chi2_contingency(contingency_table)
-        n = contingency_table.sum().sum()
-        min_dim = min(contingency_table.shape) - 1
-        cramers_v = np.sqrt(chi2 / (n * min_dim))
-        effect_sizes['cramers_v'] = cramers_v
-        
-    elif var1_type == 'catégorielle' and var2_type == 'numérique':
-        # Eta carré pour variable catégorielle vs numérique
-        groups = [group for name, group in df.groupby(var1)[var2]]
-        f_stat, _ = f_oneway(*groups)
-        n = len(df)
-        k = len(groups)
-        eta_squared = f_stat * (k - 1) / (f_stat * (k - 1) + (n - k))
-        effect_sizes['eta_squared'] = eta_squared
-        
-    elif var1_type == 'numérique' and var2_type == 'numérique':
-        # Coefficient de corrélation de Pearson
-        corr_coef, _ = pearsonr(df[var1].dropna(), df[var2].dropna())
-        effect_sizes['pearson_r'] = corr_coef
-    
-    return effect_sizes
-
-def create_multivariate_analysis(df, target_var, feature_vars):
-    """
-    Effectue une analyse multivariée basique
-    """
-    results = {}
-    
-    # Matrice de corrélation avec la variable cible
-    numerical_vars = [var for var in feature_vars if df[var].dtype in ['int64', 'float64']]
-    if numerical_vars and df[target_var].dtype in ['int64', 'float64']:
-        correlations = {}
-        for var in numerical_vars:
-            corr, _ = pearsonr(df[var].dropna(), df[target_var].dropna())
-            correlations[var] = corr
-        results['correlations_with_target'] = correlations
-    
-    # Importance des features (méthode simple)
-    if df[target_var].dtype in ['int64', 'float64']:
-        # Régression linéaire simple pour chaque variable
-        feature_importance = {}
-        for var in feature_vars:
-            if df[var].dtype in ['int64', 'float64']:
-                clean_data = df[[var, target_var]].dropna()
-                if len(clean_data) > 1:
-                    corr, _ = pearsonr(clean_data[var], clean_data[target_var])
-                    feature_importance[var] = abs(corr)
-        results['feature_importance'] = feature_importance
-    
-    return results
-
-def export_analysis_report(df, analyses, filename="rapport_analyse.html"):
-    """
-    Exporte un rapport d'analyse complet au format HTML
-    """
-    import datetime
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Rapport d'Analyse - LabMath Analytics</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            .header {{ background: #2c3e50; color: white; padding: 20px; text-align: center; }}
-            .section {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; }}
-            .footer {{ background: #f8f9fa; padding: 10px; text-align: center; margin-top: 20px; }}
-            table {{ width: 100%; border-collapse: collapse; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h1>🔬 Rapport d'Analyse LabMath Analytics</h1>
-            <p>Généré le {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-        </div>
-        
-        <div class="section">
-            <h2>📊 Informations Générales</h2>
-            <p><strong>Nombre d'observations:</strong> {len(df)}</p>
-            <p><strong>Nombre de variables:</strong> {len(df.columns)}</p>
-            <p><strong>Variables numériques:</strong> {len(df.select_dtypes(include=[np.number]).columns)}</p>
-            <p><strong>Variables catégorielles:</strong> {len(df.select_dtypes(include=['object']).columns)}</p>
-        </div>
-    """
-    
-    # Ajouter les analyses spécifiques
-    for analysis_name, analysis_data in analyses.items():
-        html_content += f"""
-        <div class="section">
-            <h2>📈 {analysis_name}</h2>
-            <pre>{str(analysis_data)}</pre>
-        </div>
-        """
-    
-    html_content += f"""
-        <div class="footer">
-            <p>🔬 Powered by <strong>Lab_Math SCSM</strong> and <strong>CIE</strong> | © Copyright 2025</p>
-            <p>Rappart généré automatiquement par LabMath Analytics Pro</p>
-        </div>
-    </body>
-    </html>
-    """
-    
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(html_content)
-    
-    return filename
-
 # Exemple d'utilisation
 if __name__ == "__main__":
     # Créer un générateur de données
     generator = DataGenerator()
     
-    # Générer un dataset
-    df = generator.generate_healthcare_dataset(1000)
+    # Générer un dataset santé
+    df = generator.generate_healthcare_dataset(548)  # Même taille que votre exemple
     
-    # Créer un tableau conditionnel
-    tableau = generate_conditional_table(df, 'Type_Etablissement', 'Niveau_Complexite')
-    tableau_formate = format_conditional_table(tableau, "Répartition des établissements par type et niveau")
+    # Créer une analyse complète
+    analyses = create_healthcare_analysis(df)
     
-    print("Tableau conditionnel généré avec succès!")
-    print(tableau_formate)
+    # Afficher les tableaux
+    for name, table in analyses.items():
+        print(f"\n{name}:")
+        display(table)

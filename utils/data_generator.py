@@ -54,7 +54,7 @@ class DataGenerator:
         # Catégories prédéfinies pour plus de réalisme
         categories = {
             'Region': ['Nord', 'Sud', 'Est', 'Ouest', 'Centre'],
-            'Type_Etablissement': ['Public', 'Privé', 'Confessionnel'],  # Modifié pour correspondre à l'exemple
+            'Type_Etablissement': ['Public', 'Privé', 'Confessionnel'],
             'Niveau_Complexite': ['Level I', 'Level II', 'Level III', 'Level IV'],
             'Specialite': ['Généraliste', 'Cardiologie', 'Pédiatrie', 'Chirurgie', 'Urgence'],
             'Statut': ['Public', 'Privé', 'Mixte'],
@@ -62,7 +62,8 @@ class DataGenerator:
             'Accreditation': ['Oui', 'Non', 'En cours'],
             'Equipement': ['Basique', 'Intermédiaire', 'Avancé'],
             'Personnel': ['Insuffisant', 'Adéquat', 'Abondant'],
-            'Financement': ['Etat', 'Privé', 'International', 'Mixte']
+            'Financement': ['Etat', 'Privé', 'International', 'Mixte'],
+            'Glycosurie_Albuminurie': ['Oui', 'Non']  # Ajout pour l'exemple
         }
         
         category_keys = list(categories.keys())
@@ -77,11 +78,11 @@ class DataGenerator:
             
             # Générer des probabilités réalistes pour chaque catégorie
             if var_name == 'Type_Etablissement':
-                # Probabilités réalistes pour les types d'établissement
                 probs = [0.70, 0.20, 0.10]  # Public, Privé, Confessionnel
             elif var_name == 'Niveau_Complexite':
-                # Probabilités réalistes pour les niveaux de complexité
                 probs = [0.50, 0.35, 0.10, 0.05]  # Level I, II, III, IV
+            elif var_name == 'Glycosurie_Albuminurie':
+                probs = [0.30, 0.70]  # 30% Oui, 70% Non
             else:
                 probs = [1/len(categories_list)] * len(categories_list)
             
@@ -193,7 +194,7 @@ class DataGenerator:
         # Ajouter des corrélations avec certaines variables numériques
         numerical_keys = [k for k in data.keys() if isinstance(data[k], np.ndarray) and data[k].dtype in [np.float64, np.int64]]
         
-        for i, key in enumerate(numerical_keys[:3]):  # Utiliser les 3 premières variables numériques
+        for i, key in enumerate(numerical_keys[:3]):
             if len(data[key]) == n_obs:
                 target += 0.3 * (data[key] - np.mean(data[key])) / np.std(data[key])
         
@@ -241,8 +242,15 @@ class DataGenerator:
             p=[0.5, 0.35, 0.1, 0.05]
         )
         
+        # Variables médicales
+        data['Glycosurie_Albuminurie'] = np.random.choice(
+            ['Oui', 'Non'], 
+            n_observations, 
+            p=[0.3, 0.7]
+        )
+        
         # Variables de performance
-        data['Taux_Occupation'] = np.random.beta(2, 2, n_observations) * 0.65 + 0.3  # 30-95%
+        data['Taux_Occupation'] = np.random.beta(2, 2, n_observations) * 0.65 + 0.3
         data['Taux_Occupation'] = np.round(data['Taux_Occupation'] * 100, 2)
         data['Patients_Jour'] = np.random.poisson(30, n_observations).clip(5, 100)
         data['Satisfaction'] = np.random.normal(7.5, 1.5, n_observations).clip(1, 10).round(1)
