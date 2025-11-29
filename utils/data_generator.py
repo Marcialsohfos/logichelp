@@ -6,9 +6,11 @@ import pandas as pd
 import numpy as np
 from faker import Faker
 import random
+import streamlit as st
+import io
 
 # ================================================================
-#  CLASS: DATA GENERATOR
+#  CLASS: DATA GENERATOR
 # ================================================================
 class DataGenerator:
     """
@@ -195,82 +197,79 @@ class DataGenerator:
 
         return df2
 
-    # ============================================================
-    # TABLEAUX DE CONTINGENCE - VERSION FINALE CORRIGÉE
-    # ============================================================
-    def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
-        """
-        Génère un tableau de contingence avec formules statistiques correctes.
-        Les totaux (dernière ligne et dernière colonne) affichent UNIQUEMENT les effectifs.
-        """
-        
-        # Vérification des colonnes
-        if var_ligne not in df.columns or var_col not in df.columns:
-            raise ValueError(f"Variables non trouvées: {var_ligne} ou {var_col}")
+# ============================================================
+# TABLEAUX DE CONTINGENCE - VERSION FINALE CORRIGÉE
+# ============================================================
+def generer_tableau_contingence_corrige(self, df, var_ligne, var_col, mode="total"):
+    """
+    Génère un tableau de contingence avec formules statistiques correctes.
+    Format: effectif (pourcentage%) pour les cellules internes, effectifs seulement pour les totaux
+    """
+    
+    # Vérification des colonnes
+    if var_ligne not in df.columns or var_col not in df.columns:
+        raise ValueError(f"Variables non trouvées: {var_ligne} ou {var_col}")
 
-        # Tableau d'effectifs avec marges
-        effectifs = pd.crosstab(
-            df[var_ligne], 
-            df[var_col], 
-            margins=True, 
-            margins_name="Total"
-        )
-        
-        n_total = effectifs.loc["Total", "Total"]
+    # Tableau d'effectifs avec marges
+    effectifs = pd.crosstab(
+        df[var_ligne], 
+        df[var_col], 
+        margins=True, 
+        margins_name="Total"
+    )
+    
+    n_total = effectifs.loc["Total", "Total"]
 
-        # Tableau des pourcentages
-        pourcent = effectifs.copy().astype(float)
+    # Tableau des pourcentages selon le mode
+    pourcent = effectifs.copy().astype(float)
 
-        for i in effectifs.index:
-            for j in effectifs.columns:
-                nij = effectifs.loc[i, j]
+    for i in effectifs.index:
+        for j in effectifs.columns:
+            nij = effectifs.loc[i, j]
 
-                # --- 1. Calcul des pourcentages ---
-                
-                # Cellule Total-Total (coin inférieur droit)
-                if i == "Total" and j == "Total":
-                    pourcent.loc[i, j] = 100.0
-                    continue
+            # MODE TOTAL
+            if mode == "total":
+                # Pourcentages sur le total général pour toutes les cellules
+                pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
 
-                # Cellules internes (ni dans la dernière ligne, ni dans la dernière colonne)
-                if i != "Total" and j != "Total":
-                    if mode == "total":
-                        # Pourcentages sur le total général
-                        pourcent.loc[i, j] = 100 * nij / n_total
-
-                    elif mode == "ligne":
-                        # Pourcentages sur le total de la ligne
-                        denom = effectifs.loc[i, "Total"]
-                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
-
-                    elif mode == "colonne":
-                        # Pourcentages sur le total de la colonne
-                        denom = effectifs.loc["Total", j]
-                        pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
-                
+            # MODE LIGNE
+            elif mode == "ligne":
+                if i == "Total":
+                    # Dernière ligne : pourcentage sur total général
+                    pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
                 else:
-                    # Les totaux de marges (dernière ligne ou dernière colonne) n'ont pas de pourcentage
-                    # Nous mettons une valeur neutre qui ne sera pas affichée
-                    pourcent.loc[i, j] = 0.0
+                    # Cellules internes : pourcentage par ligne
+                    denom = effectifs.loc[i, "Total"]
+                    pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
 
-
-        # --- 2. Formatage final (Effectif + Pourcentage) ---
-        
-        final = effectifs.copy().astype(object)
-        
-        for i in effectifs.index:
-            for j in effectifs.columns:
-                e = effectifs.loc[i, j]
-
-                # Afficher le pourcentage UNIQUEMENT pour les cellules internes
-                if i != "Total" and j != "Total":
-                    p = round(float(pourcent.loc[i, j]), 1)
-                    final.loc[i, j] = f"{e} ({p}%)"
+            # MODE COLONNE
+            elif mode == "colonne":
+                if j == "Total":
+                    # Dernière colonne : pourcentage sur total général
+                    pourcent.loc[i, j] = 100 * nij / n_total if n_total > 0 else 0.0
                 else:
-                    # Dernière ligne ou dernière colonne (incluant Total-Total) : seulement l'effectif
-                    final.loc[i, j] = f"{e}"
+                    # Cellules internes : pourcentage par colonne
+                    denom = effectifs.loc["Total", j]
+                    pourcent.loc[i, j] = 100 * nij / denom if denom > 0 else 0.0
 
-        return final
+    # Construction du tableau final
+    final = effectifs.copy().astype(object)
+    
+    for i in effectifs.index:
+        for j in effectifs.columns:
+            e = effectifs.loc[i, j]
+            p = round(float(pourcent.loc[i, j]), 1)
+
+            # Cellules internes : effectif (pourcentage%)
+            if i != "Total" and j != "Total":
+                final.loc[i, j] = f"{e} ({p}%)"
+            
+            # Cellules des totaux : effectif seulement
+            else:
+                final.loc[i, j] = f"{e}"
+
+    return final
+
     # ------------------------------------------------------------
     def afficher_formules_statistiques(self):
         """Retourne les formules statistiques utilisées"""
@@ -278,42 +277,41 @@ class DataGenerator:
 📊 **FORMULES STATISTIQUES APPLIQUÉES**
 
 **Notations :**
-- n.. = effectif total  
-- nij = effectif de la cellule (i,j)  
-- ni. = total de la ligne i  
-- n.j = total de la colonne j  
+- $n_{..}$ = effectif total  
+- $n_{ij}$ = effectif de la cellule $(i,j)$  
+- $n_{i.}$ = total de la ligne $i$  
+- $n_{.j}$ = total de la colonne $j$  
 
 **Types de pourcentages :**
 
 🟦 **POURCENTAGES TOTAUX**
-• Cellules : pij = nij / n.. × 100
-• Totaux : effectifs seulement
+• Cellules : $p_{ij} = n_{ij} / n_{..} \times 100$
+• Totaux : effectifs seulement.
 
-🟩 **POURCENTAGES LIGNE**  
-• Cellules : pij = nij / ni. × 100
-• Totaux : effectifs seulement
+🟩 **POURCENTAGES LIGNE**
+• Cellules : $p_{ij} = n_{ij} / n_{i.} \times 100$
+• **Total de Ligne (marge) :** Effectif suivi de **100.0** (sans le `%`) pour confirmer la somme des pourcentages de ligne.
+• Autres Totaux : effectifs seulement.
 
 🟨 **POURCENTAGES COLONNE**
-• Cellules : pij = nij / n.j × 100  
-• Totaux : effectifs seulement
+• Cellules : $p_{ij} = n_{ij} / n_{.j} \times 100$
+• **Total de Colonne (marge) :** Effectif suivi de **100.0** (sans le `%`) pour confirmer la somme des pourcentages de colonne.
+• Autres Totaux : effectifs seulement.
 
 **Particularités :**
-• Les totaux (dernière ligne et dernière colonne) n'affichent QUE les effectifs
-• Le coin Total-Total affiche l'effectif général sans pourcentage
-• Arrondi à 1 décimale pour tous les pourcentages des cellules internes
+• Le coin Total-Total affiche l'effectif général.
+• Arrondi à 1 décimale pour tous les pourcentages des cellules internes.
 """
 
 
 # ================================================================
-#  INTERFACE STREAMLIT
+#  INTERFACE STREAMLIT
 # ================================================================
 def creer_interface_tableaux_contingence(df):
     """
     Crée une interface Streamlit pour les tableaux de contingence
     """
-    import streamlit as st
-    import io
-
+    
     st.header("📊 Tableaux de Contingence - Version Finale Corrigée")
 
     gen = DataGenerator()
@@ -321,7 +319,9 @@ def creer_interface_tableaux_contingence(df):
     # Section informations
     with st.expander("ℹ️ Informations et formules"):
         st.markdown(gen.afficher_formules_statistiques())
-        st.info("**Note importante :** Les totaux (dernière ligne et dernière colonne) n'affichent QUE les effectifs, pas les pourcentages")
+        st.info(
+            "**Note importante :** En mode **Ligne** ou **Colonne**, le total de marge correspondant affiche **(100.0)** après l'effectif pour indiquer que la somme des pourcentages des cellules internes est bien 100%."
+        )
 
     # Sélection des variables
     col1, col2 = st.columns(2)
@@ -391,9 +391,16 @@ if __name__ == "__main__":
     df = gen.generate_complex_dataset(300)
     print(f"✅ Dataset généré : {df.shape[0]} observations, {df.shape[1]} variables")
     
-    # Test des tableaux de contingence
+    # Test des tableaux de contingence (mode ligne)
     print("\n📋 Test tableau de contingence (mode ligne) :")
-    tableau_test = gen.generer_tableau_contingence_corrige(
+    tableau_test_ligne = gen.generer_tableau_contingence_corrige(
         df, "Type_Etablissement", "Niveau_Complexite", "ligne"
     )
-    print(tableau_test)
+    print(tableau_test_ligne)
+
+    # Test des tableaux de contingence (mode colonne)
+    print("\n📋 Test tableau de contingence (mode colonne) :")
+    tableau_test_colonne = gen.generer_tableau_contingence_corrige(
+        df, "Type_Etablissement", "Niveau_Complexite", "colonne"
+    )
+    print(tableau_test_colonne)
